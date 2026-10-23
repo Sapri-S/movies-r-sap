@@ -1,0 +1,98 @@
+# Movies R Sap
+
+Your movies. Your own universe. A personal Windows desktop cinema with a Netflix-inspired library, your own files, and room to grow into a home server.
+
+![Movies R Sap library with original preview artwork](docs/images/library-preview.jpg)
+
+Built with **Electron, Node.js, SQLite, and plain JavaScript/HTML/CSS**. The desktop app embeds a local backend, stores video files on disk, and keeps library metadata and playback progress in SQLite.
+
+## Run from source
+
+Use Windows with Node.js 24.11 or later and npm. From a terminal:
+
+```powershell
+git clone https://github.com/Sapri-S/movies-r-sap.git
+cd movies-r-sap
+npm ci
+npm run desktop
+```
+
+The repository contains source code, artwork, and tests. Create the portable Windows application folder with `npm run package:win`; packaged executables and personal libraries are excluded from Git.
+
+## Open the desktop app
+
+After packaging, double-click **Start Movies R Sap.cmd**, or open **release/Movies R Sap-win32-x64/Movies R Sap.exe**.
+
+The packaged desktop app includes its runtime. You do not need Node.js, a browser, or a terminal to use it. Keep the entire packaged application folder together; the executable depends on the supporting files beside it. Closing the app also stops its private local backend.
+
+This is a local portable build, not a signed installer. No cloud account is needed. Phones, TVs, and other computers are outside this release.
+
+## Your library
+
+- Add one or more videos using **Add videos** or drag them onto its upload area.
+- Browse Movies, TV Shows, and Home videos. Search, sort, edit details, and set cover artwork.
+- Use **My List**, play videos, and return to saved playback positions.
+- Automatic thumbnails are generated when the video can be decoded.
+- Uploads copy files into app-managed storage; original files stay untouched.
+- Removing a movie explicitly deletes its app-managed copy and metadata.
+
+The desktop library is stored under `%APPDATA%\Movies R Sap\library`. **Library settings** shows the actual location and storage use. Keeping videos outside the application folder lets updates preserve your collection.
+
+The optional browser version stores a separate library in the project's `data` folder by default. Desktop and browser libraries are not opened simultaneously against one database. To relocate a library, stop both versions first and copy the complete library folder to the target location before opening it.
+
+## Videos and DVDs
+
+MP4 and WebM are good starting points. File extension alone does not guarantee playback: video and audio codecs must be supported by the player. MOV, M4V, MKV, and AVI uploads are accepted, with a clear playback error when their content cannot be decoded. Video uploads are limited to 100 GB per file; cover images to 10 MB.
+
+You can add compatible videos already converted from DVDs. Guided physical-DVD scanning/conversion is on the roadmap and is not built into this release. Sample cover artwork is labeled as a preview; no feature films are included.
+
+## Back up or relocate the collection
+
+1. Close the app.
+2. Copy the entire library folder, including `library.sqlite`, any SQLite sidecar files, `media/videos`, and `media/posters`.
+3. Restore the complete folder while the app is closed, then reopen it.
+
+The metadata export in Library settings includes titles and portable file mappings. It does not include videos or cover images and is not a complete backup. Moving just the executable does not move the library.
+
+## Development
+
+Use Node.js 24.11 or later for development. The packaged desktop app does not require a separate Node installation.
+
+```powershell
+npm ci
+npm run desktop
+```
+
+`npm ci` installs Electron's Windows runtime through the `install-electron` postinstall command. To create the desktop distribution:
+
+```powershell
+npm run check
+npm test
+npm run package:win
+```
+
+For the browser companion, run `npm start` or double-click **Start Browser Version.cmd**, then open `http://127.0.0.1:4173`. Keep its terminal open while using it. `PORT` changes that browser server's port and `MOVIES_DATA_DIR` changes its library root. The desktop app manages its own backend and port.
+
+## Project structure
+
+- `desktop/`: app window, lifecycle, and native menus.
+- `dist/`: shared interface and original artwork.
+- `apps/server/`: local HTTP API, SQLite metadata, and disk media adapter.
+- `tests/`: backend integration and frontend regression checks.
+- `prototypes/`: unused early browser-storage experiment.
+
+The design uses JavaScript ES modules and Node's SQLite/HTTP APIs. Dependencies are confined to desktop development/packaging. Future storage adapters and database migrations can extend the existing modules.
+
+## Project documents
+
+| Document | Responsibility |
+| --- | --- |
+| [README.md](README.md) | Overview, usage, backup, and development. |
+| [AGENTS.md](AGENTS.md) | Rules for coding agents. |
+| [PRODUCT.md](docs/PRODUCT.md) | Product scope and acceptance criteria. |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System structure and growth decisions. |
+| [ROADMAP.md](docs/ROADMAP.md) | Milestones and outstanding work. |
+
+## Verification assets
+
+`tests/fixtures/flower.mp4` is Mozilla's public CC0 clip from `https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4`, used for real playback verification. It is not seeded into the user library or packaged app.

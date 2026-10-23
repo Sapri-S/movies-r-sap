@@ -1,0 +1,25 @@
+{
+  "name": "movies-r-sap",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.mjs",
+  "productName": "Movies R Sap",
+  "author": "Movies R Sap",
+  "description": "Your movies. Your own universe. A private local movie library.",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "scripts": {
+    "postinstall": "install-electron",
+    "start": "node apps/server/index.mjs",
+    "desktop": "electron .",
+    "package:win": "node scripts/package-desktop.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+data/
+.test-data/
+tests/.tmp/
+tests/.runtime-*/
+.openai/
+*.log
+release/
+*.tar.gz
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
