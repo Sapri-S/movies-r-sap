@@ -95,6 +95,11 @@
             running, then retry.</span
           ><button data-action="refresh">Retry</button>
         </div>
+        <div class="conversion-banner" id="conversion-banner" hidden>
+          <span data-icon="film"></span>
+          <span id="conversion-banner-label"></span>
+          <button class="text-button" data-action="conversions">View conversions <span data-icon="arrow"></span></button>
+        </div>
         <section
           id="continue-section"
           class="shelf"
@@ -122,6 +127,7 @@
               </h2>
             </div>
             <div class="collection-tools">
+              <button class="text-button conversion-library-button" data-action="conversions"><span data-icon="film"></span> MP4 conversions</button>
               <span class="source-label"
                 ><span class="status-dot"></span>This PC</span
               ><button

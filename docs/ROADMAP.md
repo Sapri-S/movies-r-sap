@@ -44,6 +44,9 @@ Each milestone should end with a working, reviewable result. Update status from 
 
 ## 3. Expand the collection
 
+- [x] Add explicit local MKV/video-to-MP4 conversion with progress, cancellation, and persistent job history.
+- [x] Preserve originals and publish verified H.264/AAC copies as separate library titles.
+- [x] Verify real MKV conversion and MP4 browser playback; pass 34 combined tests and packaged converter startup checks.
 - [ ] Import existing folders without duplicating all their files.
 - [ ] Track missing/moved media clearly and allow source relocation.
 - [ ] Catalog physical discs and attach existing/imported video assets to titles.
@@ -66,7 +69,7 @@ Each milestone should end with a working, reviewable result. Update status from 
 
 ## 5. Optional growth
 
-Subtitles and alternate audio; transcoding; TV/remote-friendly layouts; multiple profiles; remote access; richer season/episode management. Prioritize these from actual use.
+Subtitles and alternate audio; automatic streaming transcoding; TV/remote-friendly layouts; multiple profiles; remote access; richer season/episode management. Prioritize these from actual use.
 
 ## Remaining decisions
 

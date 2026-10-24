@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { createReadStream } from 'node:fs';
 import { createDatabase } from './database.mjs';
 import { createDiskSource, MediaError } from './media/disk-source.mjs';
+import { createConversionManager } from './media/conversion.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION = '1.0.0';
@@ -165,7 +166,7 @@ async function acquireLock(dataDir) {
 }
 
 /** Create an unbound HTTP server. Tests/launchers choose a loopback listen port. */
-export async function createApp({ dataDir = path.join(projectRoot, 'data'), webDir = path.join(projectRoot, 'dist') } = {}) {
+export async function createApp({ dataDir = path.join(projectRoot, 'data'), webDir = path.join(projectRoot, 'dist'), conversion = {} } = {}) {
   dataDir = path.resolve(dataDir);
   webDir = path.resolve(webDir);
   const releaseLock = await acquireLock(dataDir);
@@ -206,6 +207,43 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
     const title = database.getTitle(id);
     if (!title) throw new MediaError(404, 'title_not_found', 'This title is no longer in your library.');
     return title;
+  }
+
+  let conversions;
+  try {
+    conversions = await createConversionManager({ dataDir, source, ...conversion,
+      publish: ({ temporary, input }) => exclusiveTitle(input.title.id, async () => {
+        requireTitle(input.title.id);
+        let asset;
+        let artwork;
+        try {
+          const originalName = `${path.basename(input.asset.originalName, path.extname(input.asset.originalName)).slice(0, 250)}.mp4`;
+          asset = await source.publishConversion(temporary, originalName);
+          // A separate artwork copy makes either title independently removable.
+          const posterInfo = await source.inspect(database.getAsset(input.title.id), true);
+          if (posterInfo) {
+            const mimeType = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }[path.extname(posterInfo.key)];
+            artwork = await source.importPoster(source.open(posterInfo), { expectedBytes: posterInfo.size, mimeType });
+            asset.posterKey = artwork.sourceKey;
+          }
+          const { title } = input;
+          const result = database.createTitle({ id: randomUUID(), title: `${title.title.slice(0, 193)} (MP4)`,
+            category: title.category, year: title.year, description: title.description, palette: title.palette,
+            duration: title.duration, watchlist: title.watchlist, position: 0, completed: false }, asset);
+          await Promise.all([source.confirmPublication(asset), source.confirmPublication(artwork)])
+            .catch((error) => console.error('Conversion journal cleanup failed:', error.message));
+          return result;
+        } catch (error) {
+          for (const publication of [artwork, asset].filter(Boolean)) {
+            try { await source.removeKey(publication.sourceKey); await source.confirmPublication(publication); } catch { /* Restart cleanup retries journaled files. */ }
+          }
+          throw error;
+        }
+      }) });
+  } catch (error) {
+    database.close();
+    await releaseLock();
+    throw error;
   }
 
   async function streamAsset(request, response, id, poster = false) {
@@ -271,6 +309,15 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
     const pathname = requestPath(request);
     const method = request.method;
     if (pathname === '/api/health' && method === 'GET') { sendJson(response, 200, { ok: true }); return; }
+    if (pathname === '/api/conversion' && method === 'GET') { sendJson(response, 200, conversions.capability()); return; }
+    if (pathname === '/api/conversion/jobs' && method === 'GET') { sendJson(response, 200, conversions.list()); return; }
+    const conversionCancel = /^\/api\/conversion\/jobs\/([A-Za-z0-9_-]{1,128})\/cancel$/.exec(pathname);
+    if (conversionCancel && method === 'POST') {
+      const input = await readJson(request);
+      if (Object.keys(input).length) throw new MediaError(400, 'invalid_conversion', 'Cancel does not accept conversion options.');
+      sendJson(response, 200, await conversions.cancel(conversionCancel[1]));
+      return;
+    }
     if (pathname === '/api/settings' && method === 'GET') {
       const titles = database.listTitles();
       const inspected = await Promise.all(titles.map((title) => source.inspect(database.getAsset(title.id))));
@@ -306,9 +353,22 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
       return;
     }
 
-    const match = /^\/api\/titles\/([A-Za-z0-9_-]{1,128})(?:\/(stream|poster))?$/.exec(pathname);
+    const match = /^\/api\/titles\/([A-Za-z0-9_-]{1,128})(?:\/(stream|poster|conversions))?$/.exec(pathname);
     if (match) {
       const [, id, action] = match;
+      if (action === 'conversions' && method === 'POST') {
+        const input = await readJson(request);
+        if (Object.keys(input).length) throw new MediaError(400, 'invalid_conversion', 'This converter uses the app’s fixed MP4 profile; custom paths and options are not accepted.');
+        const job = await exclusiveTitle(id, async () => {
+          const title = requireTitle(id);
+          const asset = database.getAsset(id);
+          const info = await source.inspect(asset);
+          if (!info) throw new MediaError(404, 'media_unavailable', 'The original video file is missing. Restore it before converting.');
+          return conversions.start({ ...info, title, asset });
+        });
+        sendJson(response, 202, job);
+        return;
+      }
       if (action === 'stream' && ['GET', 'HEAD'].includes(method)) { await streamAsset(request, response, id); return; }
       if (action === 'poster' && ['GET', 'HEAD'].includes(method)) { await streamAsset(request, response, id, true); return; }
       if (!action && method === 'GET') { sendJson(response, 200, await publicTitle(requireTitle(id))); return; }
@@ -327,6 +387,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
       if (!action && method === 'DELETE') {
         await exclusiveTitle(id, async () => {
           requireTitle(id);
+          if (conversions.isUsing(id)) throw new MediaError(409, 'conversion_active', 'Wait for this movie’s conversion to finish or cancel it before removing the original.');
           const asset = database.getAsset(id);
           const staged = await source.stageRemoval(asset);
           try { database.deleteTitle(id); } catch (error) { await staged.rollback(); throw error; }
@@ -390,7 +451,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
   });
 
   return {
-    server, dataDir, webDir, mediaPath: source.mediaPath, database, source,
+    server, dataDir, webDir, mediaPath: source.mediaPath, database, source, conversions,
     close() {
       if (closePromise) return closePromise;
       closing = true;
@@ -402,6 +463,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
           server.closeIdleConnections();
         });
         await Promise.allSettled([...operations]);
+        await conversions.close();
         database.close();
         await releaseLock();
       })();

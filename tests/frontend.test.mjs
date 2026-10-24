@@ -195,3 +195,129 @@ test('metadata and cover requests have a finite timeout and propagate aborts', a
     await assert.rejects(result, { name: 'TimeoutError' });
   }
 });
+
+for (const staleOutcome of ['success', 'failure']) {
+  test(`a stale library ${staleOutcome} cannot replace a newer refresh`, async () => {
+    const first = deferred(), second = deferred();
+    const state = { titles: [], online: false, loading: true };
+    const banner = { hidden: false };
+    let requests = 0, renders = 0;
+    const context = harness(['refresh'], {
+      state, libraryGeneration: 0,
+      api: {
+        list: () => (++requests === 1 ? first.promise : second.promise),
+        settings: async () => ({ libraryPath: 'test library' }),
+      },
+      $: () => banner,
+      renderLibrary() { renders++; },
+      toast() { assert.fail('a stale or silent refresh should not display an error'); },
+    });
+    const older = context.refresh({ silent: true });
+    const newer = context.refresh({ silent: true });
+    second.resolve([{ id: 'converted-output' }]);
+    await newer;
+    if (staleOutcome === 'success') first.resolve([{ id: 'original-only' }]);
+    else first.reject(new Error('old request failed'));
+    await older;
+    assert.equal(state.titles[0].id, 'converted-output');
+    assert.equal(state.online, true);
+    assert.equal(banner.hidden, true);
+    assert.equal(renders, 1, 'only the newest response should render');
+  });
+}
+
+function conversionHarness({ library, jobs, list } = {}) {
+  const state = {
+    titles: [{ id: 'original', title: 'Original MKV' }],
+    conversionJobs: [], conversionCheckedOutputs: new Set(),
+    conversionMutation: 0, conversionPolling: false,
+    online: true, loading: false,
+  };
+  const notices = [];
+  let refreshes = 0;
+  const context = harness(['findTitle', 'activeConversion', 'refresh', 'refreshConversions'], {
+    state, libraryGeneration: 0, conversionTimer: null,
+    clearTimeout() {}, setTimeout() { return null; },
+    renderLibrary() {}, renderConversions() {},
+    $: () => ({ hidden: false }),
+    toast(message) { notices.push(message); },
+    api: {
+      conversion: async () => ({ available: true }),
+      conversionJobs: async () => jobs,
+      settings: async () => ({}),
+      async list() { refreshes++; return list ? list() : library; },
+    },
+  });
+  return { state, context, notices, refreshes: () => refreshes };
+}
+
+test('a completed conversion on the first poll refreshes a stale library snapshot', async () => {
+  const output = { id: 'mp4-copy', title: 'Movie (MP4)' };
+  const job = { id: 'conversion', status: 'completed', sourceTitleId: 'original', outputTitleId: output.id };
+  const run = conversionHarness({ library: [{ id: 'original' }, output], jobs: [job] });
+  await run.context.refreshConversions();
+  assert.equal(run.refreshes(), 1);
+  assert.equal(run.state.titles.find((title) => title.id === output.id), output);
+  await run.context.refreshConversions();
+  assert.equal(run.refreshes(), 1, 'an already discovered copy should not force another refresh');
+});
+
+test('a deleted converted copy is checked once rather than refreshing forever', async () => {
+  const job = { id: 'old-conversion', status: 'completed', outputTitleId: 'deleted-copy' };
+  const run = conversionHarness({ library: [{ id: 'original' }], jobs: [job] });
+  await run.context.refreshConversions();
+  await run.context.refreshConversions();
+  await run.context.refreshConversions();
+  assert.equal(run.refreshes(), 1);
+  assert.equal(run.state.conversionCheckedOutputs.has(job.id), true);
+});
+
+test('a completed copy is checked again after a temporary library failure', async () => {
+  const output = { id: 'mp4-copy' };
+  const job = { id: 'conversion', status: 'completed', outputTitleId: output.id };
+  let unavailable = true;
+  const run = conversionHarness({
+    jobs: [job],
+    list() {
+      if (unavailable) throw new Error('library temporarily unavailable');
+      return [output];
+    },
+  });
+  await run.context.refreshConversions();
+  assert.equal(run.state.online, false);
+  assert.equal(run.state.conversionCheckedOutputs.has(job.id), false);
+  unavailable = false;
+  await run.context.refreshConversions();
+  assert.equal(run.refreshes(), 2);
+  assert.equal(run.state.titles[0].id, output.id);
+  assert.equal(run.state.conversionCheckedOutputs.has(job.id), true);
+});
+
+test('a stale conversion poll cannot erase a job started while it was pending', async () => {
+  const capability = deferred();
+  const job = { id: 'new-conversion', sourceTitleId: 'original', status: 'running' };
+  const state = {
+    conversionJobs: [], conversionCheckedOutputs: new Set(),
+    conversionMutation: 0, conversionPolling: false,
+  };
+  let refreshes = 0;
+  const context = harness(['activeConversion', 'refreshConversions', 'startConversion'], {
+    state, conversionTimer: null, modal: { open: false },
+    clearTimeout() {}, setTimeout() { return null; },
+    renderConversions() {}, toast() {},
+    refresh: async () => { refreshes++; },
+    api: {
+      conversion: () => capability.promise,
+      conversionJobs: async () => [],
+      convert: async () => job,
+    },
+  });
+  const poll = context.refreshConversions();
+  await context.startConversion('original');
+  capability.resolve({ available: true });
+  await poll;
+  assert.equal(state.conversionJobs.length, 1);
+  assert.equal(state.conversionJobs[0], job);
+  assert.equal(state.conversionMutation, 1);
+  assert.equal(refreshes, 0);
+});

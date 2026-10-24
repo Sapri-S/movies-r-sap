@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, stat, statfs, realpath, rename, rm, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, stat, statfs, realpath, rename, rm, readdir, readFile, writeFile } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -174,6 +174,29 @@ export async function createDiskSource({ dataDir }) {
         await rm(path.join(tempPath, asset.publicationName), { force: true });
       }
     },
+    async publishConversion(temporaryFile, originalName) {
+      // Only an internally generated job output can enter the media directory.
+      const name = path.basename(temporaryFile);
+      if (!/^conversion-[a-f0-9-]{36}\.mp4\.part$/.test(name) || path.resolve(temporaryFile) !== path.join(tempPath, name)) {
+        throw new MediaError(400, 'invalid_conversion', 'The conversion output reference is invalid.');
+      }
+      const info = await stat(temporaryFile);
+      if (!info.isFile() || info.size < 12 || info.size > MAX_VIDEO_BYTES) throw new MediaError(415, 'invalid_conversion', 'The converter did not produce a valid video file.');
+      const handle = await open(temporaryFile, 'r');
+      const sample = Buffer.alloc(32);
+      try { await handle.read(sample, 0, sample.length, 0); } finally { await handle.close(); }
+      if (!validVideoSignature(sample, '.mp4')) throw new MediaError(415, 'invalid_conversion', 'The converter did not produce a valid MP4 file.');
+      const id = randomUUID();
+      const key = `videos/${id}.mp4`;
+      const publicationName = `publish-${randomUUID()}.json`;
+      await writeFile(path.join(tempPath, publicationName), JSON.stringify({ sourceKey: key }), { flag: 'wx', mode: 0o600, flush: true });
+      try { await rename(temporaryFile, resolveKey(key)); } catch (error) {
+        await rm(path.join(tempPath, publicationName), { force: true }).catch(() => {});
+        throw error;
+      }
+      return { id, sourceId: 'local', sourceKey: key, fileSize: info.size, publicationName,
+        mimeType: 'video/mp4', originalName: sanitizeOriginalName(originalName), posterKey: null };
+    },
     async importVideo(request, { originalName, expectedBytes }) {
       const name = sanitizeOriginalName(originalName);
       const extension = path.extname(name).toLowerCase();
@@ -297,6 +320,9 @@ export async function createDiskSource({ dataDir }) {
           await rm(journalPath, { force: true });
         }
         if (entry.isFile() && /^upload-[a-f0-9-]+\.part$/.test(entry.name)) {
+          await rm(path.join(tempPath, entry.name), { force: true });
+        }
+        if (entry.isFile() && /^conversion-[a-f0-9-]{36}\.mp4\.part$/.test(entry.name)) {
           await rm(path.join(tempPath, entry.name), { force: true });
         }
       }

@@ -33,6 +33,7 @@ This is a local portable build, not a signed installer. No cloud account is need
 - Browse Movies, TV Shows, and Home videos. Search, sort, edit details, and set cover artwork.
 - Use **My List**, play videos, and return to saved playback positions.
 - Automatic thumbnails are generated when the video can be decoded.
+- Create a compatible MP4 copy of an MKV or another uploaded video, with conversion progress and cancellation.
 - Uploads copy files into app-managed storage; original files stay untouched.
 - Removing a movie explicitly deletes its app-managed copy and metadata.
 
@@ -43,6 +44,17 @@ The optional browser version stores a separate library in the project's `data` f
 ## Videos and DVDs
 
 MP4 and WebM are good starting points. File extension alone does not guarantee playback: video and audio codecs must be supported by the player. MOV, M4V, MKV, and AVI uploads are accepted, with a clear playback error when their content cannot be decoded. Video uploads are limited to 100 GB per file; cover images to 10 MB.
+
+### Convert an MKV to MP4
+
+1. Add the MKV through **Add videos**.
+2. Open that video's details and choose **Convert to MP4**. The same option appears if playback fails.
+3. Choose **Create MP4 copy**. Follow its progress through **MP4 conversions**, where you can cancel or retry.
+4. When it finishes, use **Play MP4** or open the new **(MP4)** title in your library.
+
+Conversion runs on this PC using the included FFmpeg engine. It creates H.264 video and AAC stereo audio from the first video and audio tracks; subtitles, additional tracks, and attachments remain in the original. The original video, artwork, and saved watch progress are preserved. The new copy has its own title and artwork so either can be removed independently.
+
+Only one conversion runs at a time. Encoding uses processor time, may take a while for a full movie, and needs additional disk space. The initial free-space check requires the original file's size plus 256 MB; the output may be larger and remaining space is checked during conversion. Closing the conversion dialog is fine. Keep the desktop app or browser server running until completion; stopping it cancels the job, and a crash marks an unfinished job as interrupted. Conversion history survives a restart, but unfinished encoding does not resume automatically.
 
 You can add compatible videos already converted from DVDs. Guided physical-DVD scanning/conversion is on the roadmap and is not built into this release. Sample cover artwork is labeled as a preview; no feature films are included.
 
@@ -63,7 +75,7 @@ npm ci
 npm run desktop
 ```
 
-`npm ci` installs Electron's Windows runtime through the `install-electron` postinstall command. To create the desktop distribution:
+`npm ci` downloads FFmpeg through the pinned `ffmpeg-static` dependency and installs Electron's Windows runtime through the `install-electron` postinstall command. Internet access is needed for installation; conversion itself stays local. To create the desktop distribution:
 
 ```powershell
 npm run check
@@ -81,7 +93,7 @@ For the browser companion, run `npm start` or double-click **Start Browser Versi
 - `tests/`: backend integration and frontend regression checks.
 - `prototypes/`: unused early browser-storage experiment.
 
-The design uses JavaScript ES modules and Node's SQLite/HTTP APIs. Dependencies are confined to desktop development/packaging. Future storage adapters and database migrations can extend the existing modules.
+The design uses JavaScript ES modules and Node's SQLite/HTTP APIs. `ffmpeg-static` supplies the local conversion engine; Electron and its packager support desktop development and packaging. The portable Windows app includes the converter outside its ASAR archive, along with its license and build information. See [third-party notices](THIRD_PARTY_NOTICES.md). Future storage adapters and database migrations can extend the existing modules.
 
 ## Project documents
 

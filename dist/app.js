@@ -74,6 +74,13 @@ const state = {
   uploadCategory: "movie",
   preset: null,
   editPalette: "amber",
+  conversion: null,
+  conversionJobs: [],
+  conversionError: null,
+  conversionLoading: true,
+  conversionPolling: false,
+  conversionMutation: 0,
+  conversionCheckedOutputs: new Set(),
 };
 const modal = $("#modal"),
   playerDialog = $("#player-dialog"),
@@ -82,7 +89,9 @@ let toastTimer,
   progressTimer,
   lastProgressTime = 0,
   progressSequence = Promise.resolve(),
-  playerGeneration = 0;
+  playerGeneration = 0,
+  libraryGeneration = 0,
+  conversionTimer;
 
 function coverStyle(palette = "amber") {
   const colors = palettes[palette] || palettes.amber;
@@ -226,19 +235,24 @@ function renderPresets() {
     .join("");
 }
 async function refresh({ silent = false } = {}) {
+  const generation = ++libraryGeneration;
   try {
     const [titles, settings] = await Promise.all([api.list(), api.settings()]);
+    if (generation !== libraryGeneration) return;
     state.titles = titles;
     state.settings = settings;
     state.online = true;
     $("#connection-banner").hidden = true;
   } catch (error) {
+    if (generation !== libraryGeneration) return;
     state.online = false;
     $("#connection-banner").hidden = false;
     if (!silent) toast(error.message);
   } finally {
-    state.loading = false;
-    renderLibrary();
+    if (generation === libraryGeneration) {
+      state.loading = false;
+      renderLibrary();
+    }
   }
 }
 function openDialog({
@@ -261,6 +275,146 @@ function closeModal() {
   }
   modal.close();
 }
+function activeConversion(job) {
+  return ["queued", "running"].includes(job.status);
+}
+function conversionError(error) {
+  return typeof error === "string" ? error : error?.message || "Conversion could not finish. Try again.";
+}
+function conversionProgress(job) {
+  return Math.max(0, Math.min(100, Math.round(Number(job.progress) || 0)));
+}
+function conversionTitle(job) {
+  return findTitle(job.sourceTitleId)?.title || job.sourceTitle || "Video";
+}
+function conversionStatus(job) {
+  if (job.cancelRequested && activeConversion(job)) return "Canceling…";
+  return {
+    queued: "Waiting",
+    running: `Converting · ${conversionProgress(job)}%`,
+    completed: "MP4 copy ready",
+    failed: "Conversion failed",
+    canceled: "Canceled",
+    interrupted: "Interrupted when the app closed",
+  }[job.status] || "Checking status…";
+}
+function conversionJobHTML(job) {
+  const active = activeConversion(job);
+  const output = findTitle(job.outputTitleId);
+  return `<article class="conversion-job ${active ? "is-active" : ""}"><div class="conversion-job-header"><span class="conversion-job-icon">${icon(job.status === "completed" ? "check" : ["failed", "interrupted"].includes(job.status) ? "alert" : "film", 20)}</span><div><h3>${escape(conversionTitle(job))}</h3><p>${escape(conversionStatus(job))}</p></div><div class="conversion-job-actions">${active ? `<button class="text-button" data-action="cancel-conversion" data-id="${escape(job.id)}" ${job.cancelRequested ? "disabled" : ""}>Cancel</button>` : job.status === "completed" && output ? `<button class="button button-small button-primary" data-action="play" data-id="${escape(output.id)}">${icon("play", 13)}Play MP4</button>` : ["failed", "canceled", "interrupted"].includes(job.status) && findTitle(job.sourceTitleId)?.available ? `<button class="text-button" data-action="convert" data-id="${escape(job.sourceTitleId)}">Try again</button>` : ""}</div></div>${active ? `<div class="conversion-progress" role="progressbar" aria-label="Conversion progress for ${escape(conversionTitle(job))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${conversionProgress(job)}"><span style="width:${conversionProgress(job)}%"></span></div>` : ""}${job.error ? `<p class="conversion-error">${escape(conversionError(job.error))}</p>` : ""}${job.status === "interrupted" ? '<p class="conversion-footnote">The unfinished copy was not added. Start again to create it.</p>' : ""}${job.status === "completed" && !output ? '<p class="conversion-footnote">This conversion finished. Its MP4 copy is no longer in the library.</p>' : ""}</article>`;
+}
+function conversionDetailsHTML(title) {
+  const job = state.conversionJobs.find((item) => item.sourceTitleId === title.id && activeConversion(item));
+  const completed = state.conversionJobs.find((item) => item.sourceTitleId === title.id && item.status === "completed" && findTitle(item.outputTitleId));
+  const isMKV = /\.mkv$/i.test(title.originalName || "");
+  return `<div class="conversion-detail"><div><h3>${isMKV ? "MKV, made ready for movie night." : "Need a more compatible copy?"}</h3><p>${isMKV ? "MKV playback depends on its video and audio formats. " : ""}Create a separate MP4 copy on this PC. Your original stays in the library.</p></div>${job ? `<button class="button button-outline" data-action="conversions">${icon("film", 15)}${escape(conversionStatus(job))}</button>` : `<button class="button button-outline" data-action="convert" data-id="${escape(title.id)}" ${!title.available ? "disabled" : ""}>${icon("film", 15)}Convert to MP4</button>`}${completed && !job ? `<button class="text-button" data-action="play" data-id="${escape(completed.outputTitleId)}">${icon("play", 13)}Play existing MP4 copy</button>` : ""}</div>`;
+}
+function conversionAvailability(title) {
+  const active = state.conversionJobs.find(activeConversion);
+  if (!title.available) return "The original video is unavailable. Check your library folder first.";
+  if (active) return `${conversionTitle(active)} is already converting. Wait for it to finish or cancel it first.`;
+  if (state.conversionError) return state.conversionError;
+  if (!state.conversion?.available) return state.conversion?.reason || (state.conversionLoading ? "Checking whether conversion is available…" : "The converter is unavailable on this PC.");
+  return "";
+}
+function renderConversions() {
+  const active = state.conversionJobs.filter(activeConversion);
+  const banner = $("#conversion-banner");
+  banner.hidden = !state.conversionJobs.length;
+  if (!banner.hidden) {
+    const latest = active[0] || state.conversionJobs[0];
+    $("#conversion-banner-label").textContent = `${conversionTitle(latest)} · ${conversionStatus(latest)}`;
+    banner.classList.toggle("is-active", active.length > 0);
+  }
+  const list = $("#conversion-job-list");
+  if (list) {
+    const focus = document.activeElement;
+    const action = list.contains(focus) ? focus.dataset.action : null;
+    const id = action ? focus.dataset.id : null;
+    list.innerHTML = state.conversionJobs.length
+      ? state.conversionJobs.map(conversionJobHTML).join("")
+      : `<div class="conversion-empty">${icon("film", 26)}<h3>${state.conversionLoading ? "Checking conversions…" : "Your next compatible copy starts here."}</h3><p>Open a video’s details and choose Convert to MP4. Conversions run on this PC, one at a time.</p></div>`;
+    if (action) {
+      const replacement = [...list.querySelectorAll("[data-action]")].find((button) => button.dataset.action === action && button.dataset.id === id);
+      replacement?.focus({ preventScroll: true });
+    }
+    const message = $("#conversion-status-message");
+    message.hidden = !state.conversionError && (state.conversionLoading || state.conversion?.available);
+    message.textContent = state.conversionError || state.conversion?.reason || "The converter is unavailable on this PC.";
+  }
+  const details = $("#detail-conversion");
+  const title = findTitle(details?.dataset.id);
+  if (details && title && !details.contains(document.activeElement)) details.innerHTML = conversionDetailsHTML(title);
+  const confirmation = $("#convert-confirmation");
+  const source = findTitle(confirmation?.dataset.id);
+  if (confirmation && source) {
+    const message = conversionAvailability(source);
+    $("#convert-availability").hidden = !message;
+    $("#convert-availability").textContent = message;
+    $("[data-action='start-conversion']").disabled = Boolean(message) || confirmation.dataset.starting === "true";
+  }
+}
+async function refreshConversions() {
+  if (state.conversionPolling) return;
+  state.conversionPolling = true;
+  clearTimeout(conversionTimer);
+  const mutation = state.conversionMutation;
+  try {
+    const [capability, response] = await Promise.all([api.conversion(), api.conversionJobs()]);
+    const jobs = Array.isArray(response) ? response : response.jobs;
+    state.conversion = capability;
+    state.conversionError = null;
+    if (mutation === state.conversionMutation) {
+      const completed = jobs.filter((job) => job.status === "completed" && state.conversionJobs.some((previous) => previous.id === job.id && previous.status !== "completed"));
+      const missing = jobs.filter((job) => job.status === "completed" && job.outputTitleId && !findTitle(job.outputTitleId) && !state.conversionCheckedOutputs.has(job.id));
+      state.conversionJobs = jobs;
+      if (completed.length || missing.length) {
+        await refresh({ silent: true });
+        if (state.online) {
+          for (const job of [...completed, ...missing]) state.conversionCheckedOutputs.add(job.id);
+          if (completed.some((job) => findTitle(job.outputTitleId))) toast("Your MP4 copy is ready. The original is still in your library.");
+        }
+      }
+    }
+  } catch (error) {
+    state.conversionError = `Could not check conversions: ${error.message}`;
+  } finally {
+    state.conversionLoading = false;
+    state.conversionPolling = false;
+    renderConversions();
+    conversionTimer = setTimeout(refreshConversions, state.conversionJobs.some(activeConversion) ? 1500 : 15000);
+  }
+}
+function showConversions() {
+  openDialog({
+    title: "Ready for your player.",
+    eyebrow: "MP4 CONVERSIONS",
+    body: '<p class="dialog-description">Create compatible copies without changing your original videos. Keep the desktop app or browser server running until conversion finishes. Closing this dialog is fine.</p><p class="conversion-notice" id="conversion-status-message" hidden></p><div id="conversion-job-list" class="conversion-job-list"></div>',
+    footer: '<button class="button button-outline" data-action="refresh-conversions">Refresh status</button><button class="button button-primary" data-action="close-modal">Done</button>',
+  });
+  renderConversions();
+  void refreshConversions();
+}
+function showConvert(id) {
+  const title = findTitle(id);
+  if (!title) return;
+  const availability = conversionAvailability(title);
+  openDialog({
+    title: "Make an MP4 copy.",
+    eyebrow: "CONVERT ON THIS PC",
+    body: `<div id="convert-confirmation" data-id="${escape(id)}"><p class="dialog-description">Convert <strong>${escape(title.title)}</strong> to a new MP4 in your library. Your original video and its saved progress stay untouched.</p><div class="conversion-profile"><span class="tag">MP4</span><div><h3>H.264 video · AAC stereo audio</h3><p>Includes the first video and first audio track, mixed to stereo. Subtitles, extra audio tracks, and other attachments stay in the original file.</p></div></div><p class="conversion-footnote">Conversion uses your PC’s processor and additional disk space. A full movie can take a while. Keep the app running; closing it interrupts the job. Nothing is converted automatically.</p><p class="conversion-notice" id="convert-availability" ${availability ? "" : "hidden"}>${escape(availability)}</p></div>`,
+    footer: `<button class="button button-outline" data-action="conversions">View conversions</button><button class="button button-primary" data-action="start-conversion" data-id="${escape(id)}" ${availability ? "disabled" : ""}>${icon("film", 15)}Create MP4 copy</button>`,
+  });
+}
+async function startConversion(id) {
+  const job = await api.convert(id);
+  state.conversionMutation++;
+  state.conversionJobs = [job, ...state.conversionJobs.filter((previous) => previous.id !== job.id)];
+  renderConversions();
+  if (modal.open && $("#convert-confirmation")?.dataset.id === id) showConversions();
+  toast("Conversion started. You can keep browsing your library.");
+  void refreshConversions();
+}
 function showUpload(preset = null) {
   state.preset = preset;
   state.uploadItems = [];
@@ -268,7 +422,7 @@ function showUpload(preset = null) {
   openDialog({
     title: "Bring your collection home.",
     eyebrow: "ADD VIDEOS",
-    body: `<p class="dialog-description">Your favorites deserve a place of their own. Videos are copied into your library folder on this PC.</p>${preset ? `<p class="file-note">Cover style: ${escape(preset.title)}. Your video keeps its own title.</p>` : ""}<div id="drop-zone" class="drop-zone"><span class="drop-icon">${icon("upload", 28)}</span><h3>Drop your videos here</h3><p>Movies, shows, home videos. Make it yours.</p><button class="button button-primary" data-action="choose-files">${icon("plus", 16)}Choose files</button></div><p class="file-note">MP4 and WebM are good starting points. Playback depends on the video and audio formats inside the file. DVD videos already converted to a compatible file can be added here.</p><label class="field">Add to<select id="upload-category"><option value="movie">Movies</option><option value="tv">TV Shows</option><option value="home">Home videos</option></select></label><div class="upload-queue" id="upload-queue" aria-live="polite"></div><p class="upload-summary" id="upload-summary" hidden></p>`,
+    body: `<p class="dialog-description">Your favorites deserve a place of their own. Videos are copied into your library folder on this PC.</p>${preset ? `<p class="file-note">Cover style: ${escape(preset.title)}. Your video keeps its own title.</p>` : ""}<div id="drop-zone" class="drop-zone"><span class="drop-icon">${icon("upload", 28)}</span><h3>Drop your videos here</h3><p>Movies, shows, home videos. Make it yours.</p><button class="button button-primary" data-action="choose-files">${icon("plus", 16)}Choose files</button></div><p class="file-note">MP4, WebM, MKV, M4V, MOV, and AVI accepted. Playback depends on the video and audio formats inside. If an MKV or another video won’t play, open its details and choose Convert to MP4. Conversion starts only when you choose it.</p><label class="field">Add to<select id="upload-category"><option value="movie">Movies</option><option value="tv">TV Shows</option><option value="home">Home videos</option></select></label><div class="upload-queue" id="upload-queue" aria-live="polite"></div><p class="upload-summary" id="upload-summary" hidden></p>`,
     footer: `<button class="button button-outline" data-action="close-modal" id="upload-done">Done</button>`,
   });
   const zone = $("#drop-zone");
@@ -451,7 +605,7 @@ async function showDetail(id) {
   openDialog({
     title: "A closer look.",
     eyebrow: "IN YOUR COLLECTION",
-    body: `<div class="detail-cover"><div class="detail-art movie-cover" style="${coverStyle(title.palette)}">${coverHTML(title)}</div><div class="detail-copy"><p class="meta-line">${escape([title.year, categories[title.category], duration(title.duration)].filter(Boolean).join(" · "))}</p><h3>${escape(title.title)}</h3><p>${escape(title.description || "One of your stories. Ready when you are.")}</p><button class="button button-primary" data-action="play" data-id="${escape(id)}">${icon("play", 16)}${title.position > 3 && !title.completed ? "Continue watching" : "Play movie"}</button></div></div>${!title.available ? '<div class="danger-box">This video file is unavailable. Check that your library folder is still in place.</div>' : ""}<div class="detail-options"><button class="button button-outline" data-action="watchlist" data-id="${escape(id)}">${icon(title.watchlist ? "check" : "plus", 15)}${title.watchlist ? "In My List" : "My List"}</button><button class="button button-outline" data-action="edit" data-id="${escape(id)}">${icon("edit", 15)}Edit details</button><button class="button button-outline" data-action="choose-poster" data-id="${escape(id)}">${icon("image", 15)}Change cover</button>${title.position > 0 || title.completed ? `<button class="button button-outline" data-action="reset-progress" data-id="${escape(id)}">${icon("back", 15)}Start over</button>` : ""}</div><div class="detail-file"><span>Original file</span><br>${escape(title.originalName)} · ${bytes(title.fileSize)}<br><br><button class="text-button danger-link" data-action="confirm-delete" data-id="${escape(id)}">${icon("trash", 13)}Remove from library</button></div>`,
+    body: `<div class="detail-cover"><div class="detail-art movie-cover" style="${coverStyle(title.palette)}">${coverHTML(title)}</div><div class="detail-copy"><p class="meta-line">${escape([title.year, categories[title.category], duration(title.duration)].filter(Boolean).join(" · "))}</p><h3>${escape(title.title)}</h3><p>${escape(title.description || "One of your stories. Ready when you are.")}</p><button class="button button-primary" data-action="play" data-id="${escape(id)}">${icon("play", 16)}${title.position > 3 && !title.completed ? "Continue watching" : "Play movie"}</button></div></div>${!title.available ? '<div class="danger-box">This video file is unavailable. Check that your library folder is still in place.</div>' : ""}<div class="detail-options"><button class="button button-outline" data-action="watchlist" data-id="${escape(id)}">${icon(title.watchlist ? "check" : "plus", 15)}${title.watchlist ? "In My List" : "My List"}</button><button class="button button-outline" data-action="edit" data-id="${escape(id)}">${icon("edit", 15)}Edit details</button><button class="button button-outline" data-action="choose-poster" data-id="${escape(id)}">${icon("image", 15)}Change cover</button>${title.position > 0 || title.completed ? `<button class="button button-outline" data-action="reset-progress" data-id="${escape(id)}">${icon("back", 15)}Start over</button>` : ""}</div><div id="detail-conversion" data-id="${escape(id)}">${conversionDetailsHTML(title)}</div><div class="detail-file"><span>Original file</span><br>${escape(title.originalName)} · ${bytes(title.fileSize)}<br><br><button class="text-button danger-link" data-action="confirm-delete" data-id="${escape(id)}">${icon("trash", 13)}Remove from library</button></div>`,
   });
 }
 function showEdit(id) {
@@ -603,7 +757,7 @@ async function playTitle(id) {
   video.onerror = () => {
     if (generation !== playerGeneration) return;
     $("#player-error").innerHTML =
-      `${icon("alert", 26)}<h3>This video couldn’t play.</h3><p>The file may use a video or audio format this browser can’t decode, or its file is unavailable. Try a browser-compatible MP4 or WebM file. Automatic conversion is a future feature.</p><button class="button button-outline" id="player-error-close">Back to library</button>`;
+      `${icon("alert", 26)}<h3>This video couldn’t play.</h3><p>This player may not support the video or audio formats inside this file. Create an MP4 copy with H.264 video and AAC audio, or check that the original file is readable.</p><div class="player-error-actions"><button class="button button-primary" data-action="convert-from-player" data-id="${escape(id)}">${icon("film", 15)}Convert to MP4</button><button class="button button-outline" id="player-error-close">Back to library</button></div>`;
     $("#player-error").hidden = false;
     $("#player-error-close").onclick = closePlayer;
   };
@@ -689,7 +843,32 @@ document.addEventListener("click", async (event) => {
         processQueue();
       }
     } else if (action === "settings") showSettings();
-    else if (action === "roadmap") showRoadmap();
+    else if (action === "conversions") showConversions();
+    else if (action === "refresh-conversions") {
+      button.disabled = true;
+      await refreshConversions();
+      if (button.isConnected) button.disabled = false;
+    } else if (action === "convert") showConvert(id);
+    else if (action === "convert-from-player") {
+      closePlayer();
+      showConvert(id);
+    } else if (action === "start-conversion") {
+      button.disabled = true;
+      const confirmation = $("#convert-confirmation");
+      confirmation.dataset.starting = "true";
+      try {
+        await startConversion(id);
+      } finally {
+        if (confirmation.isConnected) confirmation.dataset.starting = "false";
+      }
+    } else if (action === "cancel-conversion") {
+      button.disabled = true;
+      const job = await api.cancelConversion(id);
+      state.conversionMutation++;
+      state.conversionJobs = state.conversionJobs.map((item) => item.id === job.id ? job : item);
+      renderConversions();
+      void refreshConversions();
+    } else if (action === "roadmap") showRoadmap();
     else if (action === "refresh") refresh();
     else if (action === "play") await playTitle(id);
     else if (action === "detail") showDetail(id);
@@ -829,3 +1008,4 @@ hydrateIcons();
 renderPresets();
 route();
 refresh({ silent: true });
+void refreshConversions();

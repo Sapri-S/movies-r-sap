@@ -27,6 +27,7 @@ Artwork previews must be clearly identified. The app must never imply that sampl
 6. Add or remove titles from My List.
 7. Edit title details and deliberately remove a title from the collection.
 8. Preserve the library and video files when the app or browser closes.
+9. On explicit request, convert an uploaded MKV or other video to a separate compatible MP4, with progress, cancellation, and original-file preservation.
 
 Use a simple Movies / TV / Home videos category if useful; full season and episode management is a later feature.
 
@@ -68,7 +69,7 @@ Technical references: [HandBrake sources](https://handbrake.fr/docs/en/1.11.0/wo
 
 ## Outside the first release
 
-Public hosting of the movie collection, internet access, public sharing, automatic disc conversion, transcoding, native TV apps, and paid-service integrations.
+Public hosting of the movie collection, internet access, public sharing, automatic disc conversion, automatic or on-demand streaming transcoding, native TV apps, and paid-service integrations. Manual creation of a separate MP4 copy is implemented.
 
 ## Confirmed scope
 
@@ -76,6 +77,7 @@ Public hosting of the movie collection, internet access, public sharing, automat
 - A Windows desktop app is required alongside the optional browser interface.
 - Home-server deployment and access from other devices come later.
 - Adding movies from the owner's DVDs is a requested capability; integrated import timing is still proposed.
+- The owner authorized local MKV-to-MP4 conversion. Conversion creates a separate title and keeps the original video; it does not scan or decrypt physical discs.
 
 ## Initial implementation choices
 

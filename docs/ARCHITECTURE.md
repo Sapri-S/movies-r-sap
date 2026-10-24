@@ -37,7 +37,7 @@ Start with one working disk source. Add another implementation when a real secon
 
 A single repository contains plain JavaScript ES modules, a buildless HTML/CSS frontend, Node HTTP and SQLite APIs, and an Electron 45.0.0 desktop shell. Development targets Node 24.11+. The packaged Electron runtime includes its own Node 24.22.0 and Chromium runtime; no external runtime is needed by the user. @electron/packager 20.3.0 produces the portable Windows x64 application folder.
 
-The early TypeScript direction was simplified to JavaScript modules with separate files and behavior tests. The backend has no third-party production dependencies. Electron and its packager are pinned development dependencies in package-lock.json.
+The early TypeScript direction was simplified to JavaScript modules with separate files and behavior tests. The HTTP/SQLite backend uses Node's native APIs. The pinned `ffmpeg-static` 5.3.0 production dependency supplies a separate local conversion executable. Electron and its packager are pinned development dependencies in package-lock.json.
 
 ## Source layout
 
@@ -82,7 +82,17 @@ Persist source-relative keys, not a hardcoded drive letter for every title. A so
 6. Save playback position periodically and on pause/exit where possible.
 7. Return a useful unavailable/unsupported state when an asset cannot play.
 
-Initial playback targets files the selected browser can decode. Check actual media compatibility during implementation. Automatic transcoding is a separate later milestone.
+Direct playback targets files the selected browser can decode. An explicit Convert to MP4 action can create a compatible copy; automatic streaming transcoding remains a separate later milestone.
+
+## Local MP4 conversion
+
+`apps/server/media/conversion.mjs` manages one local FFmpeg process at a time. The API accepts an existing title ID and the fixed conversion profile, not arbitrary filenames or FFmpeg arguments. It uses argument arrays with no shell, restricts protocols to local files/pipes, hides the process window, and supports cancellation and shutdown.
+
+The profile selects the first video and optional first audio track, encodes H.264/yuv420p plus AAC stereo, and writes a fast-start MP4. Subtitles, additional tracks, and attachments are left in the original. Progress comes from FFmpeg's output; the result must contain encoded frames and decode a frame before journaled publication. Disk space is checked before and during conversion, with a 100 GB output limit.
+
+The output receives a new title and media asset with independent artwork. The original remains unchanged and cannot be deleted during its active conversion. Temporary output is removed on failure, cancellation, or startup recovery. Recent jobs are atomically persisted in `conversion-jobs.json`; running records become interrupted after a crash. Normal shutdown cancels active encoding, and jobs are not automatically resumed.
+
+Source runs use the npm-supplied executable. Packaged Windows runs explicitly use `resources/ffmpeg/ffmpeg.exe`, outside ASAR, with the engine's upstream license and build provenance. See `THIRD_PARTY_NOTICES.md`.
 
 ## Planned DVD import boundary
 

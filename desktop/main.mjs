@@ -129,7 +129,7 @@ function installWindowPolicy(window) {
     if (shuttingDown || smokeTest) { event.preventDefault(); return; }
     const choice = dialog.showMessageBoxSync(window, {
       type: 'question', title: 'Close Movies R Sap?', message: 'A video is still being added.',
-      detail: 'Closing cancels unfinished uploads. Videos already in your library stay saved.',
+      detail: 'Closing cancels unfinished uploads and MP4 conversions. Original videos and completed copies stay saved.',
       buttons: ['Keep app open', 'Close app'], defaultId: 0, cancelId: 0, noLink: true,
     });
     // Electron's event override permits the unload after explicit confirmation.
@@ -188,6 +188,8 @@ async function runSmokeTest(window, dataDir) {
       const health = await response.json();
       const titlesResponse = await fetch('/api/titles');
       const titles = await titlesResponse.json();
+      const converterResponse = await fetch('/api/conversion');
+      const converter = await converterResponse.json();
       return {
         title: document.title,
         readyState: document.readyState,
@@ -198,6 +200,7 @@ async function runSmokeTest(window, dataDir) {
         loading: !!document.querySelector('#movie-grid .loading-state'),
         connected: document.querySelector('#connection-banner')?.hidden === true,
         health: response.ok && health.ok === true,
+        converterAvailable: converterResponse.ok && converter.available === true,
         titleCount: titlesResponse.ok && Array.isArray(titles) ? titles.length : null,
         rendererHasNode: typeof process !== 'undefined' || typeof require !== 'undefined'
       };
@@ -210,7 +213,7 @@ async function runSmokeTest(window, dataDir) {
     preferences.sandbox === true && preferences.webSecurity === true && preferences.webviewTag === false;
   if (!snapshot || !snapshot.title.includes(APP_NAME) || !snapshot.hasNavigation || !snapshot.hasUpload ||
       !snapshot.hasCollection || !snapshot.artworkCards || snapshot.loading || !snapshot.connected ||
-      !snapshot.health || snapshot.titleCount === null || snapshot.rendererHasNode || !secure) {
+      !snapshot.health || !snapshot.converterAvailable || snapshot.titleCount === null || snapshot.rendererHasNode || !secure) {
     throw new Error(`Desktop smoke test failed: ${JSON.stringify({ snapshot, secure })}`);
   }
   console.log('DESKTOP_SMOKE_OK', JSON.stringify({ ...snapshot, secure, electron: process.versions.electron,
@@ -243,6 +246,7 @@ if (!ownsInstanceLock) {
     // error. Database and video writes always remain outside packaged app.asar.
     backendPromise = import('../apps/server/app.mjs').then(({ createApp }) => createApp({
       dataDir, webDir: path.join(app.getAppPath(), 'dist'),
+      conversion: app.isPackaged ? { ffmpegPath: path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe') } : {},
     }));
     backend = await backendPromise;
     if (shuttingDown) return;

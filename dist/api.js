@@ -23,6 +23,12 @@ export async function request(path, { method = "GET", body, ...options } = {}) {
 export const api = {
   list: () => request("/titles"),
   settings: () => request("/settings"),
+  conversion: () => request("/conversion"),
+  conversionJobs: () => request("/conversion/jobs"),
+  convert: (id) =>
+    request(`/titles/${encodeURIComponent(id)}/conversions`, { method: "POST", body: {} }),
+  cancelConversion: (id) =>
+    request(`/conversion/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: {} }),
   update: (id, body) =>
     request(`/titles/${encodeURIComponent(id)}`, { method: "PATCH", body }),
   remove: (id) =>
