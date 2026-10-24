@@ -44,7 +44,7 @@ The optional browser version stores a separate library in the project's `data` f
 
 ## Offline movie names and posters
 
-Open **Library settings → Offline catalog** to import a UTF-8 CSV. Only `title` is required. Optional columns are `id`, `year`, `description`, `genre`, and `poster_filename`. Download the CSV template from that screen for an example. Imports merge entries by stable ID and leave other catalog rows in place; keep an ID unchanged when editing a row. When no ID is supplied, it is derived from the title and year. Limits are 20 MB per file and 50,000 catalog entries.
+Open **Library settings → Offline catalog** to import a UTF-8 CSV. Only `title` is required. Optional columns are `id`, `year`, `description`, `genre`, and `poster_filename`. Download the CSV template from that screen for an example. Imports merge entries by stable ID and leave other catalog rows in place; keep an ID unchanged when editing a row. When no ID is supplied, it is derived from the title and year. Limits are 20 MB per file and 100,000 catalog entries.
 
 Posters are separate local JPG, PNG, or WebP files, up to 10 MB each. Set `poster_filename` to an image's filename (for example `my-movie-1999.jpg`), then choose that image through **Choose poster images**. Filenames are case insensitive; folders and web addresses are not accepted. The app does not download images from CSV URLs.
 
@@ -57,6 +57,23 @@ For a starter list, the optional PowerShell helper downloads the official [Group
 ```
 
 Then import `catalog-imports/movies.csv` through the app. The dataset currently provides 9,742 movie names, years, and genres, with no posters or plots. It was generated in 2018, so add newer titles yourself. The helper preserves the original license and attribution in `catalog-imports/MovieLens-README.txt`; its research-use terms restrict commercial or revenue-bearing use without permission. The data is optional, excluded from Git and the desktop package, and is not automatically downloaded by the app. Internet is needed to run this helper once; catalog imports, matching, and poster display run locally.
+
+### PosterLens 25M collection
+
+The optional [PosterLens 25M dataset](https://github.com/aptlin/posterlens) supplies 62,061 poster images for the 62,423-title MovieLens 25M catalog. “25M” refers to ratings, not the number of movies. This is an older research collection with some missing or incorrect images; preview matches before applying them.
+
+From **PowerShell 7**, run:
+
+```powershell
+./scripts/prepare-posterlens-catalog.ps1
+node scripts/import-offline-catalog.mjs --url http://127.0.0.1:PORT
+```
+
+Replace `PORT` with the running app's loopback port (or use `4173` for the browser server). The first command prepares `catalog-imports/posterlens-25m/movies.csv` and a private `posters/` folder. It reads the public ZIP in bounded ranges, skips research embeddings, and never stores a second full archive. Allow roughly 40 GB for the images and another 40 GB when copying them into the app. No Kaggle/TMDB API credential is required for this public download. The app itself performs no external movie lookups.
+
+Rerun preparation to resume completed image downloads. `-MetadataOnly` prepares names/mappings without pictures; `-Limit 3` makes a small image smoke test. Large or non-JPEG source images are normalized with the included local FFmpeg engine. `progress.json` records progress and failures. The importer uses four local uploads at a time, checkpoints completed images, and can also be rerun after interruption. It updates the lookup catalog without renaming uploaded movies automatically. Close any active video uploads or conversions before restarting/updating the desktop app; keep it open during bulk poster import.
+
+Published poster filenames are IMDb IDs. The helper joins them through MovieLens `links.csv`, preserving `ml_` movie IDs and avoiding accidental matches between unrelated ID systems. The helper keeps `PROVENANCE.txt` and the original MovieLens license beside the files. PosterLens labels its data copyright to the original authors; the repository's software license does not grant blanket rights to redistribute poster images. Downloaded data, images, checkpoints, and runtime databases are excluded from Git and the desktop distribution.
 
 ## Picture size and fullscreen
 

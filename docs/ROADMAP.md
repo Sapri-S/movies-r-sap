@@ -52,6 +52,9 @@ Each milestone should end with a working, reviewable result. Update status from 
 - [x] Add catalog persistence, malformed-import rollback, poster ownership, and matching regression tests.
 - [x] Verify a 9,742-row CSV import, local poster selection, match application, and subsequent manual rename through the browser UI.
 - [x] Pass all 34 existing tests and 14 catalog tests, 16-module syntax checks, and packaged desktop catalog/template startup checks; verify private catalog data is excluded from the package.
+- [x] Prepare the 62,423-title MovieLens 25M metadata and verify IMDb-to-MovieLens poster matching using real PosterLens images.
+- [x] Support 100,000 catalog entries and efficient bulk poster counts; pass 49 regression tests and 17-module syntax checks.
+- [x] Download, validate, and import all 62,061 PosterLens images privately; the merged local catalog has 62,711 names and 650 entries without artwork. Verify persisted SQLite counts, real cover previews in the packaged app, and the repaired oversized JPEG.
 - [ ] Import existing folders without duplicating all their files.
 - [ ] Track missing/moved media clearly and allow source relocation.
 - [ ] Catalog physical discs and attach existing/imported video assets to titles.

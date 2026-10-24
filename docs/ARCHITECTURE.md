@@ -99,13 +99,17 @@ Source runs use the npm-supplied executable. Packaged Windows runs explicitly us
 
 ## Offline metadata catalog
 
-`apps/server/metadata/catalog.mjs` owns strict UTF-8 CSV parsing, bounded import validation, local search, and a separately versioned `catalog.sqlite` database. Catalog entries are lookup records, independent from playable library titles. Imports merge by stable catalog ID in one transaction; failed validation publishes no rows. The parser supports quoted commas, newlines, and escaped quotes, with limits of 20 MiB per CSV and 50,000 total entries.
+`apps/server/metadata/catalog.mjs` owns strict UTF-8 CSV parsing, bounded import validation, local search, and a separately versioned `catalog.sqlite` database. Catalog entries are lookup records, independent from playable library titles. Imports merge by stable catalog ID in one transaction; failed validation publishes no rows. The parser supports quoted commas, newlines, and escaped quotes, with limits of 20 MiB per CSV and 100,000 total entries.
 
 Poster filenames are local basenames, never arbitrary paths or fetched URLs. Imported JPEG/PNG/WebP images use the existing media-source boundary and publication journals. Startup cleanup includes catalog artwork keys. Search normalizes accents/case and returns up to 30 matches, with an optional release-year filter. The catalog makes no outbound requests and needs no API credential.
 
 An explicit match copies available title/year/description into the library metadata transaction. Existing values survive absent catalog details. A catalog poster is copied to an independent managed key before publication; removing a library title cannot remove the catalog image. Video assets, categories, watchlists, and playback progress are preserved. The frontend requires selection, preview, and Apply, and guards against stale async responses after dialog replacement.
 
 The optional MovieLens preparation script downloads and transforms an external dataset only when run by a developer. Original license/provenance stay beside the generated CSV in the ignored `catalog-imports/` directory. Neither that data nor any personal catalog is bundled with the application or published in source. A complete library backup includes both SQLite databases and all media; the library metadata JSON export omits the lookup catalog.
+
+The approved PosterLens 25M preparation helper reads public ZIP/ZIP64 archives through a bounded HTTP-range stream and Windows/.NET ZIP parsing. Its cache overlaps up to eight 16 MiB reads, rather than storing the complete archive. Covers are matched by IMDb ID through official MovieLens links; extraction targets are generated numeric basenames, never archive-controlled directory paths. Only referenced images are downloaded; embeddings are ignored. The source catalog contains 62,423 titles, so the bounded catalog capacity is 100,000 entries. Status counts are cached after startup/CSV import and incremented on new artwork; replacing an image does not increase the count, and a CSV reimport invalidates the snapshot.
+
+`scripts/import-offline-catalog.mjs` is an explicit developer-side, one-time importer against the running loopback API. It accepts only an HTTP `127.0.0.1` origin with an explicit port, validates the CSV and local file boundaries, and uses the existing image upload validation/publication flow. Its private checkpoint is tied to the library path and CSV hash; image size/mtime fingerprints allow interrupted batches to resume. It exposes no new arbitrary-file API or runtime online dependency. The imported collection remains separate from playable movies until the user chooses a match.
 
 ## Planned DVD import boundary
 

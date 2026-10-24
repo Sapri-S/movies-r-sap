@@ -57,7 +57,7 @@ $catalogRows = @($sourceCsv | ConvertFrom-Csv | ForEach-Object {
     }
   }
 })
-if ($catalogRows.Count -eq 0 -or $catalogRows.Count -gt 50000) { throw 'The catalog size is outside the supported limits for this app version.' }
+if ($catalogRows.Count -eq 0 -or $catalogRows.Count -gt 100000) { throw 'The catalog size is outside the supported limits for this app version.' }
 $csvLines = @($catalogRows | ConvertTo-Csv -NoTypeInformation)
 [System.IO.File]::WriteAllText($catalogFile, ($csvLines -join "`r`n") + "`r`n", $utf8)
 $notes = @"

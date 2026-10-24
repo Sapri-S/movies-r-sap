@@ -82,6 +82,7 @@ Public hosting of the movie collection, internet access, public sharing, automat
 - Adding movies from the owner's DVDs is a requested capability; integrated import timing is still proposed.
 - The owner authorized local MKV-to-MP4 conversion. Conversion creates a separate title and keeps the original video; it does not scan or decrypt physical discs.
 - The owner chose an offline CSV catalog for movie names and poster matching. Poster files are imported locally; automatic online metadata lookup is outside this feature.
+- The owner selected PosterLens 25M for a one-time bulk download of movie poster artwork. The prepared collection stays private and is available locally without an API credential.
 
 ## Initial implementation choices
 

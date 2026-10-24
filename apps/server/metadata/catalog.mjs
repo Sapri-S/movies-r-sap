@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { MediaError } from '../media/disk-source.mjs';
 
 export const MAX_CATALOG_BYTES = 20 * 1024 ** 2;
-export const MAX_CATALOG_ROWS = 50000;
+export const MAX_CATALOG_ROWS = 100000;
 const MAX_FIELD_LENGTH = 12000;
 const CATALOG_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const HEADERS = ['id', 'title', 'year', 'description', 'poster_filename', 'genre'];
@@ -141,14 +141,21 @@ export function createCatalog(dataDir) {
   const itemFromRow = (row) => row ? ({ id: row.id, title: row.title, year: row.year, description: row.description,
     genre: row.genre, posterFilename: row.poster_filename,
     poster: row.poster_key ? `/api/catalog/items/${encodeURIComponent(row.id)}/poster` : null }) : null;
+  // Count the full catalog once after startup/import, then update artwork
+  // counters incrementally. A 62k-image import must not rescan 62k rows per image.
+  let statusSnapshot;
+  function readStatus() {
+    const totalTitles = connection.prepare('SELECT COUNT(*) AS count FROM catalog_titles').get().count;
+    const references = connection.prepare(`SELECT COUNT(DISTINCT t.poster_filename) AS expected,
+      COUNT(DISTINCT a.filename) AS present FROM catalog_titles t LEFT JOIN catalog_artwork a ON a.filename = t.poster_filename`).get();
+    return { totalTitles, posterCount: references.present, posterReferences: references.expected,
+      missingPosters: references.expected - references.present, localOnly: true,
+      maxImportBytes: MAX_CATALOG_BYTES, maxTitles: MAX_CATALOG_ROWS };
+  }
   const repository = {
     status() {
-      const totalTitles = connection.prepare('SELECT COUNT(*) AS count FROM catalog_titles').get().count;
-      const references = connection.prepare(`SELECT COUNT(DISTINCT t.poster_filename) AS expected,
-        COUNT(DISTINCT a.filename) AS present FROM catalog_titles t LEFT JOIN catalog_artwork a ON a.filename = t.poster_filename`).get();
-      return { totalTitles, posterCount: references.present, posterReferences: references.expected,
-        missingPosters: references.expected - references.present, localOnly: true,
-        maxImportBytes: MAX_CATALOG_BYTES, maxTitles: MAX_CATALOG_ROWS };
+      statusSnapshot ??= readStatus();
+      return { ...statusSnapshot };
     },
     knownPosterKeys() { return connection.prepare('SELECT source_key FROM catalog_artwork').all().map((row) => row.source_key); },
     importCsv(text) {
@@ -166,6 +173,7 @@ export function createCatalog(dataDir) {
         const now = new Date().toISOString();
         for (const item of items) upsert.run(item.id, item.title, item.year, item.description, item.genre, item.searchTitle, item.posterFilename, now);
         connection.exec('COMMIT');
+        statusSnapshot = undefined;
       } catch (error) { connection.exec('ROLLBACK'); throw error; }
       return { imported: items.length, inserted, updated: items.length - inserted, ...repository.status(),
         posterFilenames: [...new Set(items.map((item) => item.posterFilename).filter(Boolean))] };
@@ -193,10 +201,12 @@ export function createCatalog(dataDir) {
     },
     setPoster(filename, sourceKey) {
       filename = repository.requirePosterFilename(filename);
+      statusSnapshot ??= readStatus();
       const oldKey = connection.prepare('SELECT source_key FROM catalog_artwork WHERE filename = ?').get(filename)?.source_key;
       connection.prepare(`INSERT INTO catalog_artwork (filename,source_key,updated_at) VALUES (?,?,?)
         ON CONFLICT(filename) DO UPDATE SET source_key=excluded.source_key,updated_at=excluded.updated_at`)
         .run(filename, sourceKey, new Date().toISOString());
+      if (!oldKey) { statusSnapshot.posterCount++; statusSnapshot.missingPosters--; }
       return oldKey;
     },
     close() { connection.close(); },

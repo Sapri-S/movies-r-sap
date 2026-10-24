@@ -126,11 +126,34 @@ test('malformed CSV, duplicate identities, invalid years, and unsafe poster refe
   assert.throws(() => parseCatalogCsv(`title,description\nMovie,${limit}x\n`), { status: 400 });
 });
 
-test('catalog size boundaries accept 50,000 rows and reject oversized input', () => {
+test('catalog size boundaries accept 100,000 rows and reject oversized input', () => {
   const csv = `id,title\n${Array.from({ length: MAX_CATALOG_ROWS }, (_, index) => `m${index},Movie ${index}`).join('\n')}\n`;
   assert.equal(parseCatalogCsv(csv).length, MAX_CATALOG_ROWS);
   assert.throws(() => parseCatalogCsv(`${csv}too_many,Another movie\n`), { status: 400 });
   assert.throws(() => parseCatalogCsv('x'.repeat(MAX_CATALOG_BYTES + 1)), { status: 413 });
+});
+
+test('catalog counters stay accurate across shared artwork, replacements, reimports, and restart', async (t) => {
+  const env = await fixture(t);
+  await importCsv(env, 'id,title,poster_filename\na,First,shared.png\nb,Second,SHARED.PNG\nc,Third,other.png\n');
+  const counts = () => {
+    const { totalTitles, posterReferences, posterCount, missingPosters } = env.app.catalog.status();
+    return { totalTitles, posterReferences, posterCount, missingPosters };
+  };
+  assert.deepEqual(counts(), { totalTitles: 3, posterReferences: 2, posterCount: 0, missingPosters: 2 });
+  env.app.catalog.status().totalTitles = 999;
+  assert.equal(counts().totalTitles, 3, 'callers cannot mutate cached counters');
+  assert.equal((await uploadPoster(env, 'shared.png')).response.status, 200);
+  assert.deepEqual(counts(), { totalTitles: 3, posterReferences: 2, posterCount: 1, missingPosters: 1 });
+  assert.equal((await uploadPoster(env, 'SHARED.PNG', png2)).response.status, 200);
+  assert.equal(counts().posterCount, 1, 'replacing a shared image is not a new image');
+  await importCsv(env, 'id,title,poster_filename\nc,Third,shared.png\n');
+  assert.deepEqual(counts(), { totalTitles: 3, posterReferences: 1, posterCount: 1, missingPosters: 0 });
+  await importCsv(env, 'id,title,poster_filename\na,First,new.png\n');
+  assert.deepEqual(counts(), { totalTitles: 3, posterReferences: 2, posterCount: 1, missingPosters: 1 });
+  assert.equal((await uploadPoster(env, 'new.png')).response.status, 200);
+  await env.stop(); await env.start();
+  assert.deepEqual(counts(), { totalTitles: 3, posterReferences: 2, posterCount: 2, missingPosters: 0 });
 });
 
 test('CSV imports remain separate from playable videos and persist across restart', async (t) => {
