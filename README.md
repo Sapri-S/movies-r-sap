@@ -41,6 +41,12 @@ The desktop library is stored under `%APPDATA%\Movies R Sap\library`. **Library 
 
 The optional browser version stores a separate library in the project's `data` folder by default. Desktop and browser libraries are not opened simultaneously against one database. To relocate a library, stop both versions first and copy the complete library folder to the target location before opening it.
 
+## Picture size and fullscreen
+
+The player offers **Fit**, **Fill**, and **Full screen** controls. Fit preserves the entire frame; Fill enlarges the picture and crops the edges without stretching. The choice stays active while the app is open. Use **Z** to switch Fit/Fill and **F** to enter or exit fullscreen while watching. The app's Full screen button keeps the sizing controls available in a small overlay; the video's native fullscreen control also works.
+
+DVD files can contain a widescreen movie inside a 4:3 frame with black bars encoded into the video. Fill can reduce the extra borders, but does not create detail beyond the source resolution. A wide movie can still have top and bottom bars on a taller screen.
+
 ## Videos and DVDs
 
 MP4 and WebM are good starting points. File extension alone does not guarantee playback: video and audio codecs must be supported by the player. MOV, M4V, MKV, and AVI uploads are accepted, with a clear playback error when their content cannot be decoded. Video uploads are limited to 100 GB per file; cover images to 10 MB.

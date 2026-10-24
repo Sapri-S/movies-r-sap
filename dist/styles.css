@@ -1476,14 +1476,103 @@ dialog::backdrop {
   min-height: 180px;
   display: block;
   background: #000;
+  object-fit: contain;
+}
+.video-wrap:fullscreen,
+.video-wrap:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+.video-wrap:fullscreen video,
+.video-wrap:-webkit-full-screen video,
+.video-wrap video:fullscreen,
+.video-wrap video:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
 }
 .player-bottom {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 20px;
   color: #73757d;
   font-size: 10px;
   padding: 16px 25px;
+}
+#player-meta {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.player-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.player-fit-options {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #ffffff30;
+  border-radius: 5px;
+}
+.player-view-controls button,
+.player-fullscreen-tools button {
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 4px;
+  color: #dedee1;
+  background: #ffffff12;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.player-fit-options button {
+  border-radius: 0;
+  background: transparent;
+}
+.player-fit-options button[aria-pressed="true"] {
+  color: #fff;
+  background: #ffffff28;
+}
+.player-view-controls button:hover,
+.player-fullscreen-tools button:hover {
+  background: #ffffff30;
+}
+.player-view-controls button:focus-visible,
+.player-fullscreen-tools button:focus-visible {
+  outline-offset: -2px;
+}
+.player-view-hint {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 9px;
+}
+.player-fullscreen-tools {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid #ffffff20;
+  border-radius: 7px;
+  background: #08090bd9;
+}
+.video-wrap:fullscreen .player-fullscreen-tools,
+.video-wrap:-webkit-full-screen .player-fullscreen-tools {
+  display: flex;
 }
 .player-error {
   position: absolute;
@@ -1920,8 +2009,11 @@ body.subpage .hero-upload-label {
     padding: 12px 15px;
     font-size: 8px;
   }
-  .player-bottom span:last-child {
-    display: none;
+  .player-view-controls {
+    justify-content: flex-start;
+  }
+  .player-view-hint {
+    text-align: left;
   }
   body.subpage .library-content {
     padding-top: 80px;

@@ -33,6 +33,7 @@ Each milestone should end with a working, reviewable result. Update status from 
 - [x] Add artwork selection and useful empty/error states.
 - [x] Add My List, watch progress, and Continue watching.
 - [x] Add multi-file upload progress and explicit removal behavior.
+- [x] Add fullscreen Fit/Fill controls and verify both native-video and wrapper fullscreen using a letterboxed DVD-shaped fixture at 2560×1600.
 - [x] Verify browser upload/playback, detail editing, My List, and search flows.
 - [x] Document backup locations and basic recovery.
 - [x] Package a self-contained Windows desktop executable and launcher.

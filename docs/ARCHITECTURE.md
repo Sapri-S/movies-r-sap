@@ -60,6 +60,8 @@ Electron starts the backend on an ephemeral loopback port, then loads only that 
 
 The app uses a single-instance lock, focuses an existing window on repeated launch, and closes the renderer before stopping its backend. Playback position is saved periodically; the final close-time save is best-effort. Runtime data stays outside app.asar so replacing the distribution preserves the library. Smoke tests use an explicitly isolated directory.
 
+The shared player preserves source aspect ratio with Fit (`contain`) and offers explicit Fill (`cover`) cropping. Fullscreen can target the video wrapper, retaining its sizing toolbar, or the native video element; both clear ordinary dialog height limits. Keyboard shortcuts work only while the player is open and do not intercept editable fields or modified keys. Sizing changes affect display only and never rewrite source media.
+
 ## Portable library records
 
 - `Title`: stable ID, title, category, year, artwork reference, date added.

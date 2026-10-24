@@ -234,18 +234,32 @@
           <span data-icon="close"></span>
         </button>
       </div>
-      <div class="video-wrap">
+      <div class="video-wrap" id="video-wrap" data-fit="contain">
         <video
           id="video-player"
           controls
           playsinline
           preload="metadata"
         ></video>
+        <div class="player-fullscreen-tools" aria-label="Fullscreen viewing controls">
+          <div class="player-fit-options" role="group" aria-label="Picture size">
+            <button type="button" data-player-fit="contain" aria-pressed="true" title="Fit the whole picture without cropping (Z)">Fit</button>
+            <button type="button" data-player-fit="cover" aria-pressed="false" title="Fill the player by cropping the edges (Z)">Fill</button>
+          </div>
+          <button type="button" data-player-fullscreen title="Exit full screen (F)">Exit full screen</button>
+        </div>
         <div class="player-error" id="player-error" hidden></div>
       </div>
       <div class="player-bottom">
-        <span id="player-meta"></span
-        ><span>Escape to return to your library</span>
+        <span id="player-meta"></span>
+        <div class="player-view-controls">
+          <div class="player-fit-options" role="group" aria-label="Picture size">
+            <button type="button" data-player-fit="contain" aria-pressed="true" title="Fit the whole picture without cropping (Z)">Fit</button>
+            <button type="button" data-player-fit="cover" aria-pressed="false" title="Fill the player by cropping the edges (Z)">Fill</button>
+          </div>
+          <button type="button" data-player-fullscreen title="Full screen (F)">Full screen</button>
+          <span class="player-view-hint" id="player-view-hint">Fit keeps the whole picture · Z to change · F for full screen</span>
+        </div>
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

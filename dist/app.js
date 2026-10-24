@@ -68,6 +68,7 @@ const state = {
   loading: true,
   detailId: null,
   playerId: null,
+  playerFit: "contain",
   uploadItems: [],
   uploading: false,
   uploadController: null,
@@ -777,6 +778,47 @@ async function playTitle(id) {
     if (state.playerId && !video.paused) saveProgress(false);
   }, 10000);
 }
+function setPlayerFit(mode) {
+  if (mode !== "contain" && mode !== "cover") return;
+  state.playerFit = mode;
+  video.style.objectFit = mode;
+  $("#video-wrap").dataset.fit = mode;
+  document.querySelectorAll("[data-player-fit]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.playerFit === mode));
+  });
+  $("#player-view-hint").textContent = mode === "cover"
+    ? "Fill crops picture edges · Z to change · F for full screen"
+    : "Fit keeps the whole picture · Z to change · F for full screen";
+}
+async function togglePlayerFullscreen() {
+  if (!playerDialog.open) return;
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("#video-wrap").requestFullscreen();
+  } catch {
+    toast("Full screen couldn't open. Try the video's full-screen control.");
+  }
+}
+function syncPlayerFullscreen() {
+  const fullscreen = Boolean(document.fullscreenElement);
+  document.querySelectorAll("[data-player-fullscreen]").forEach((button) => {
+    button.textContent = fullscreen ? "Exit full screen" : "Full screen";
+    button.title = fullscreen ? "Exit full screen (F)" : "Full screen (F)";
+  });
+}
+function handlePlayerShortcut(event) {
+  if (!playerDialog.open || event.defaultPrevented || event.repeat ||
+      event.ctrlKey || event.altKey || event.metaKey ||
+      event.target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+  const key = event.key.toLowerCase();
+  if (key === "z") {
+    event.preventDefault();
+    setPlayerFit(state.playerFit === "cover" ? "contain" : "cover");
+  } else if (key === "f") {
+    event.preventDefault();
+    void togglePlayerFullscreen();
+  }
+}
 function saveProgress(ended = false) {
   const id = state.playerId;
   if (
@@ -970,6 +1012,19 @@ modal.addEventListener("click", (event) => {
   }
 });
 $("#close-player").addEventListener("click", closePlayer);
+document.querySelectorAll("[data-player-fit]").forEach((button) => {
+  button.addEventListener("click", () => setPlayerFit(button.dataset.playerFit));
+});
+document.querySelectorAll("[data-player-fullscreen]").forEach((button) => {
+  button.addEventListener("click", togglePlayerFullscreen);
+});
+document.addEventListener("keydown", handlePlayerShortcut);
+document.addEventListener("fullscreenchange", syncPlayerFullscreen);
+playerDialog.addEventListener("close", () => {
+  if (document.fullscreenElement && playerDialog.contains(document.fullscreenElement)) {
+    void document.exitFullscreen().catch(() => {});
+  }
+});
 playerDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   closePlayer();
