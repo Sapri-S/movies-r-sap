@@ -94,16 +94,17 @@ function installSessionPolicy(window) {
   session.on('will-download', (event, item, contents) => {
     let url;
     try { url = new URL(item.getURL()); } catch { event.preventDefault(); return; }
-    if (contents !== mainWindow?.webContents || !isOwnOrigin(url.href) || url.pathname !== '/api/export') {
+    const catalogTemplate = url.pathname === '/assets/catalog-template.csv';
+    if (contents !== mainWindow?.webContents || !isOwnOrigin(url.href) || (url.pathname !== '/api/export' && !catalogTemplate)) {
       event.preventDefault();
       return;
     }
     // Leaving savePath unset lets Electron show the native save dialog. Export
     // remains an intentional user choice rather than a silent disk write.
     item.setSaveDialogOptions({
-      title: 'Export library metadata',
-      defaultPath: path.join(app.getPath('documents'), 'movies-r-sap-library.json'),
-      filters: [{ name: 'Library metadata (JSON)', extensions: ['json'] }],
+      title: catalogTemplate ? 'Save movie catalog template' : 'Export library metadata',
+      defaultPath: path.join(app.getPath('documents'), catalogTemplate ? 'catalog-template.csv' : 'movies-r-sap-library.json'),
+      filters: catalogTemplate ? [{ name: 'Movie catalog (CSV)', extensions: ['csv'] }] : [{ name: 'Library metadata (JSON)', extensions: ['json'] }],
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
     item.once('done', (_event, state) => {
@@ -190,6 +191,10 @@ async function runSmokeTest(window, dataDir) {
       const titles = await titlesResponse.json();
       const converterResponse = await fetch('/api/conversion');
       const converter = await converterResponse.json();
+      const catalogResponse = await fetch('/api/catalog');
+      const catalog = await catalogResponse.json();
+      const templateResponse = await fetch('/assets/catalog-template.csv');
+      const catalogTemplate = await templateResponse.text();
       return {
         title: document.title,
         readyState: document.readyState,
@@ -201,6 +206,8 @@ async function runSmokeTest(window, dataDir) {
         connected: document.querySelector('#connection-banner')?.hidden === true,
         health: response.ok && health.ok === true,
         converterAvailable: converterResponse.ok && converter.available === true,
+        catalogAvailable: catalogResponse.ok && catalog.localOnly === true && Number.isInteger(catalog.totalTitles),
+        catalogTemplateAvailable: templateResponse.ok && catalogTemplate.startsWith('id,title,year,'),
         titleCount: titlesResponse.ok && Array.isArray(titles) ? titles.length : null,
         rendererHasNode: typeof process !== 'undefined' || typeof require !== 'undefined'
       };
@@ -213,7 +220,8 @@ async function runSmokeTest(window, dataDir) {
     preferences.sandbox === true && preferences.webSecurity === true && preferences.webviewTag === false;
   if (!snapshot || !snapshot.title.includes(APP_NAME) || !snapshot.hasNavigation || !snapshot.hasUpload ||
       !snapshot.hasCollection || !snapshot.artworkCards || snapshot.loading || !snapshot.connected ||
-      !snapshot.health || !snapshot.converterAvailable || snapshot.titleCount === null || snapshot.rendererHasNode || !secure) {
+      !snapshot.health || !snapshot.converterAvailable || !snapshot.catalogAvailable || !snapshot.catalogTemplateAvailable ||
+      snapshot.titleCount === null || snapshot.rendererHasNode || !secure) {
     throw new Error(`Desktop smoke test failed: ${JSON.stringify({ snapshot, secure })}`);
   }
   console.log('DESKTOP_SMOKE_OK', JSON.stringify({ ...snapshot, secure, electron: process.versions.electron,

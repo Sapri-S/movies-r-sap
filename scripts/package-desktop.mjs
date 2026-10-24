@@ -34,7 +34,7 @@ const output = await packager({
   icon: resolve(root, 'desktop/icon.ico'),
   extraResource: [converterResources],
   ignore: [
-    /^\/(?:node_modules|data|tests|prototypes|docs|scripts|release|\.openai|\.test-data|\.git)(?:\/|$)/,
+    /^\/(?:node_modules|data|catalog-imports|tests|prototypes|docs|scripts|release|\.openai|\.test-data|\.git)(?:\/|$)/,
     /\.(?:log|cmd|md)$/i,
     /^\/package-lock\.json$/,
   ],

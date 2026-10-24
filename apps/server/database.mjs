@@ -135,6 +135,13 @@ export function createDatabase(dataDir) {
         return repository.getTitle(id);
       });
     },
+    applyCatalogMetadata(id, changes, posterKey = undefined) {
+      return transaction(() => {
+        repository.updateTitle(id, changes);
+        if (posterKey !== undefined) connection.prepare('UPDATE media_assets SET poster_key = ? WHERE title_id = ?').run(posterKey, id);
+        return repository.getTitle(id);
+      });
+    },
     patchTitle(id, changes, clearPoster = false) {
       return transaction(() => {
         repository.updateTitle(id, changes);

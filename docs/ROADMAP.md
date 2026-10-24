@@ -48,13 +48,17 @@ Each milestone should end with a working, reviewable result. Update status from 
 - [x] Add explicit local MKV/video-to-MP4 conversion with progress, cancellation, and persistent job history.
 - [x] Preserve originals and publish verified H.264/AAC copies as separate library titles.
 - [x] Verify real MKV conversion and MP4 browser playback; pass 34 combined tests and packaged converter startup checks.
+- [x] Add offline CSV imports, local poster imports, title/year search, explicit match previews, and metadata application that preserves the video and watch progress.
+- [x] Add catalog persistence, malformed-import rollback, poster ownership, and matching regression tests.
+- [x] Verify a 9,742-row CSV import, local poster selection, match application, and subsequent manual rename through the browser UI.
+- [x] Pass all 34 existing tests and 14 catalog tests, 16-module syntax checks, and packaged desktop catalog/template startup checks; verify private catalog data is excluded from the package.
 - [ ] Import existing folders without duplicating all their files.
 - [ ] Track missing/moved media clearly and allow source relocation.
 - [ ] Catalog physical discs and attach existing/imported video assets to titles.
 - [ ] Add a local Import DVD workflow for supported discs: scan, select title/options, convert, verify, and attach the output.
 - [ ] Add persisted import-job progress, cancellation, and clear failures for unsupported discs, insufficient space, disc removal, and interruption.
 - [ ] Verify an actual supported DVD import and playback after removing the disc.
-- [ ] Add metadata/artwork providers if the owner wants them.
+- [ ] Add online metadata/artwork providers if the owner later chooses them; the requested offline CSV catalog is implemented.
 
 **Done when:** existing files and physical copies fit the same library model.
 

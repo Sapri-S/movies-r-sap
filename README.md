@@ -31,6 +31,7 @@ This is a local portable build, not a signed installer. No cloud account is need
 
 - Add one or more videos using **Add videos** or drag them onto its upload area.
 - Browse Movies, TV Shows, and Home videos. Search, sort, edit details, and set cover artwork.
+- Match uploaded files to movie names and local posters from an offline CSV catalog.
 - Use **My List**, play videos, and return to saved playback positions.
 - Automatic thumbnails are generated when the video can be decoded.
 - Create a compatible MP4 copy of an MKV or another uploaded video, with conversion progress and cancellation.
@@ -40,6 +41,22 @@ This is a local portable build, not a signed installer. No cloud account is need
 The desktop library is stored under `%APPDATA%\Movies R Sap\library`. **Library settings** shows the actual location and storage use. Keeping videos outside the application folder lets updates preserve your collection.
 
 The optional browser version stores a separate library in the project's `data` folder by default. Desktop and browser libraries are not opened simultaneously against one database. To relocate a library, stop both versions first and copy the complete library folder to the target location before opening it.
+
+## Offline movie names and posters
+
+Open **Library settings → Offline catalog** to import a UTF-8 CSV. Only `title` is required. Optional columns are `id`, `year`, `description`, `genre`, and `poster_filename`. Download the CSV template from that screen for an example. Imports merge entries by stable ID and leave other catalog rows in place; keep an ID unchanged when editing a row. When no ID is supplied, it is derived from the title and year. Limits are 20 MB per file and 50,000 catalog entries.
+
+Posters are separate local JPG, PNG, or WebP files, up to 10 MB each. Set `poster_filename` to an image's filename (for example `my-movie-1999.jpg`), then choose that image through **Choose poster images**. Filenames are case insensitive; folders and web addresses are not accepted. The app does not download images from CSV URLs.
+
+After uploading a video, open its details and choose **Match from catalog**. Type its real movie name, check the year, select a result, then choose **Apply this match**. The available name, year, description, and poster update together; missing fields preserve your existing details. Your video, category, My List, and watch progress stay saved. **Edit details** and **Change cover** remain available afterward. A filename such as `A1 T00` cannot identify the movie by itself. Importing a catalog does not add thousands of playable movies to your library.
+
+For a starter list, the optional PowerShell helper downloads the official [GroupLens MovieLens small dataset](https://grouplens.org/datasets/movielens/latest/) and prepares a compatible CSV:
+
+```powershell
+./scripts/prepare-movielens-catalog.ps1
+```
+
+Then import `catalog-imports/movies.csv` through the app. The dataset currently provides 9,742 movie names, years, and genres, with no posters or plots. It was generated in 2018, so add newer titles yourself. The helper preserves the original license and attribution in `catalog-imports/MovieLens-README.txt`; its research-use terms restrict commercial or revenue-bearing use without permission. The data is optional, excluded from Git and the desktop package, and is not automatically downloaded by the app. Internet is needed to run this helper once; catalog imports, matching, and poster display run locally.
 
 ## Picture size and fullscreen
 
@@ -67,10 +84,10 @@ You can add compatible videos already converted from DVDs. Guided physical-DVD s
 ## Back up or relocate the collection
 
 1. Close the app.
-2. Copy the entire library folder, including `library.sqlite`, any SQLite sidecar files, `media/videos`, and `media/posters`.
+2. Copy the entire library folder, including `library.sqlite`, `catalog.sqlite`, any SQLite sidecar files, `media/videos`, and `media/posters`.
 3. Restore the complete folder while the app is closed, then reopen it.
 
-The metadata export in Library settings includes titles and portable file mappings. It does not include videos or cover images and is not a complete backup. Moving just the executable does not move the library.
+The metadata export in Library settings includes library titles and portable file mappings. It does not include the lookup catalog, videos, or cover images and is not a complete backup. Keep your source catalog CSV and poster files as well. Moving just the executable does not move the library.
 
 ## Development
 

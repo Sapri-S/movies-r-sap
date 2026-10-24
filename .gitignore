@@ -4,6 +4,7 @@ data/
 tests/.tmp/
 tests/.runtime-*/
 .openai/
+catalog-imports/
 *.log
 release/
 *.tar.gz

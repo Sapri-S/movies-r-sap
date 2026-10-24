@@ -8,6 +8,7 @@ import { createReadStream } from 'node:fs';
 import { createDatabase } from './database.mjs';
 import { createDiskSource, MediaError } from './media/disk-source.mjs';
 import { createConversionManager } from './media/conversion.mjs';
+import { createCatalog, readCatalogCsv } from './metadata/catalog.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION = '1.0.0';
@@ -15,7 +16,7 @@ const JSON_LIMIT = 64 * 1024;
 const PALETTES = ['amber', 'teal', 'violet', 'forest', 'rose', 'blue'];
 const STATIC_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.csv': 'text/csv; charset=utf-8' };
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 function sendJson(response, status, value, headers = {}) {
@@ -172,12 +173,16 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
   const releaseLock = await acquireLock(dataDir);
   let database;
   let source;
+  let catalog;
   try {
     database = createDatabase(dataDir);
+    catalog = createCatalog(dataDir);
     source = await createDiskSource({ dataDir });
     const knownKeys = new Set(database.exportMetadata().assets.flatMap((asset) => [asset.sourceKey, asset.posterKey].filter(Boolean)));
+    for (const key of catalog.knownPosterKeys()) knownKeys.add(key);
     await source.cleanupTemporaryFiles(knownKeys);
   } catch (error) {
+    catalog?.close();
     database?.close();
     await releaseLock();
     throw error;
@@ -241,6 +246,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
         }
       }) });
   } catch (error) {
+    catalog.close();
     database.close();
     await releaseLock();
     throw error;
@@ -309,6 +315,48 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
     const pathname = requestPath(request);
     const method = request.method;
     if (pathname === '/api/health' && method === 'GET') { sendJson(response, 200, { ok: true }); return; }
+    if (pathname === '/api/catalog' && method === 'GET') { sendJson(response, 200, catalog.status()); return; }
+    if (pathname === '/api/catalog/import' && method === 'POST') {
+      if (request.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'text/csv') {
+        throw new MediaError(415, 'csv_required', 'Import the catalog as a UTF-8 CSV file.');
+      }
+      sendJson(response, 200, catalog.importCsv(await readCatalogCsv(request, uploadLength(request))));
+      return;
+    }
+    if (pathname === '/api/catalog/search' && method === 'POST') {
+      sendJson(response, 200, catalog.search(await readJson(request)));
+      return;
+    }
+    if (pathname === '/api/catalog/posters' && method === 'POST') {
+      const filename = catalog.requirePosterFilename(decodeHeader(request, 'x-file-name', true));
+      const mimeType = request.headers['content-type']?.split(';')[0].trim().toLowerCase();
+      const poster = await source.importPoster(request, { expectedBytes: uploadLength(request), mimeType });
+      let committed = false;
+      try {
+        const oldKey = catalog.setPoster(filename, poster.sourceKey);
+        committed = true;
+        await source.confirmPublication(poster).catch((error) => console.error('Catalog artwork journal cleanup failed:', error.message));
+        if (oldKey) await source.removeKey(oldKey).catch((error) => console.error('Catalog artwork cleanup failed:', error.message));
+        sendJson(response, 200, { filename, ...catalog.status() });
+      } catch (error) {
+        if (!committed) {
+          try { await source.removeKey(poster.sourceKey); await source.confirmPublication(poster); } catch { /* The publication journal retries cleanup on restart. */ }
+        }
+        throw error;
+      }
+      return;
+    }
+    const catalogPoster = /^\/api\/catalog\/items\/([A-Za-z0-9_-]{1,128})\/poster$/.exec(pathname);
+    if (catalogPoster && ['GET', 'HEAD'].includes(method)) {
+      const key = catalog.getPosterKey(catalogPoster[1]);
+      const info = key && await source.inspect({ sourceKey: key });
+      if (!info) throw new MediaError(404, 'catalog_poster_not_found', 'No local cover image is saved for this catalog movie.');
+      const mimeType = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }[path.extname(info.key)];
+      response.writeHead(200, { 'Content-Type': mimeType, 'Content-Length': info.size, 'Cache-Control': 'private, no-cache' });
+      if (method === 'HEAD') response.end();
+      else await pipeline(source.open(info), response);
+      return;
+    }
     if (pathname === '/api/conversion' && method === 'GET') { sendJson(response, 200, conversions.capability()); return; }
     if (pathname === '/api/conversion/jobs' && method === 'GET') { sendJson(response, 200, conversions.list()); return; }
     const conversionCancel = /^\/api\/conversion\/jobs\/([A-Za-z0-9_-]{1,128})\/cancel$/.exec(pathname);
@@ -353,9 +401,47 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
       return;
     }
 
-    const match = /^\/api\/titles\/([A-Za-z0-9_-]{1,128})(?:\/(stream|poster|conversions))?$/.exec(pathname);
+    const match = /^\/api\/titles\/([A-Za-z0-9_-]{1,128})(?:\/(stream|poster|conversions|catalog))?$/.exec(pathname);
     if (match) {
       const [, id, action] = match;
+      if (action === 'catalog' && method === 'POST') {
+        const input = await readJson(request);
+        if (Object.keys(input).length !== 1 || typeof input.catalogId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.catalogId)) {
+          throw new MediaError(400, 'invalid_catalog', 'Choose a movie from the local catalog.');
+        }
+        const result = await exclusiveTitle(id, async () => {
+          requireTitle(id);
+          const selected = catalog.get(input.catalogId);
+          if (!selected) throw new MediaError(404, 'catalog_not_found', 'This movie is no longer in the local catalog.');
+          const changes = validatePatch({ title: selected.title,
+            ...(selected.year === null ? {} : { year: selected.year }),
+            ...(selected.description ? { description: selected.description } : {}) }).changes;
+          let artwork;
+          let committed = false;
+          try {
+            const posterKey = catalog.getPosterKey(selected.id);
+            if (posterKey) {
+              const info = await source.inspect({ sourceKey: posterKey });
+              if (!info) throw new MediaError(404, 'catalog_poster_not_found', 'This catalog cover image is missing. Import its image again before applying it.');
+              const mimeType = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }[path.extname(info.key)];
+              artwork = await source.importPoster(source.open(info), { expectedBytes: info.size, mimeType });
+            }
+            const oldPoster = artwork ? database.getAsset(id)?.posterKey : null;
+            const updated = database.applyCatalogMetadata(id, changes, artwork?.sourceKey);
+            committed = true;
+            await source.confirmPublication(artwork).catch((error) => console.error('Matched artwork journal cleanup failed:', error.message));
+            if (oldPoster) await source.removeKey(oldPoster).catch((error) => console.error('Artwork cleanup failed:', error.message));
+            return publicTitle(updated);
+          } catch (error) {
+            if (artwork && !committed) {
+              try { await source.removeKey(artwork.sourceKey); await source.confirmPublication(artwork); } catch { /* The publication journal retries cleanup on restart. */ }
+            }
+            throw error;
+          }
+        });
+        sendJson(response, 200, result);
+        return;
+      }
       if (action === 'conversions' && method === 'POST') {
         const input = await readJson(request);
         if (Object.keys(input).length) throw new MediaError(400, 'invalid_conversion', 'This converter uses the app’s fixed MP4 profile; custom paths and options are not accepted.');
@@ -451,7 +537,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
   });
 
   return {
-    server, dataDir, webDir, mediaPath: source.mediaPath, database, source, conversions,
+    server, dataDir, webDir, mediaPath: source.mediaPath, database, source, conversions, catalog,
     close() {
       if (closePromise) return closePromise;
       closing = true;
@@ -464,6 +550,7 @@ export async function createApp({ dataDir = path.join(projectRoot, 'data'), webD
         });
         await Promise.allSettled([...operations]);
         await conversions.close();
+        catalog.close();
         database.close();
         await releaseLock();
       })();

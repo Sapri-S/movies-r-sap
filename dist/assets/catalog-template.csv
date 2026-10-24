@@ -1,0 +1,3 @@
+id,title,year,description,poster_filename,genre
+example_1,Example Adventure,2024,"Replace this example with your movie's description.",example-adventure.jpg,Adventure
+example_2,"Example Movie, The Sequel",2025,"Quoted fields can contain commas, as shown here.",example-sequel.png,Drama

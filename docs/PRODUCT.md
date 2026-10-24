@@ -28,6 +28,7 @@ Artwork previews must be clearly identified. The app must never imply that sampl
 7. Edit title details and deliberately remove a title from the collection.
 8. Preserve the library and video files when the app or browser closes.
 9. On explicit request, convert an uploaded MKV or other video to a separate compatible MP4, with progress, cancellation, and original-file preservation.
+10. Import an offline CSV catalog and local poster images, search by movie name/year, preview a match, and explicitly apply available metadata to an uploaded video. Allow manual edits afterward.
 
 Use a simple Movies / TV / Home videos category if useful; full season and episode management is a later feature.
 
@@ -39,6 +40,8 @@ Use a simple Movies / TV / Home videos category if useful; full season and episo
 - Playback resumes near the last saved point; completed titles can start again.
 - Unsupported playback displays a clear explanation instead of an endless loading state.
 - Search, filters, metadata edits, and My List reflect persisted library data.
+- Catalog imports and matching work without an online account or outbound requests. Catalog-only entries never appear as playable library movies.
+- Matching preserves the video file and watch progress, keeps existing values where catalog details are absent, and copies artwork independently.
 - Removing a library item cannot silently delete the owner's original source file.
 - The interface shows where the library is stored and whether the local backend is available.
 - The packaged desktop app runs without an installed Node.js runtime or a separate browser.
@@ -78,6 +81,7 @@ Public hosting of the movie collection, internet access, public sharing, automat
 - Home-server deployment and access from other devices come later.
 - Adding movies from the owner's DVDs is a requested capability; integrated import timing is still proposed.
 - The owner authorized local MKV-to-MP4 conversion. Conversion creates a separate title and keeps the original video; it does not scan or decrypt physical discs.
+- The owner chose an offline CSV catalog for movie names and poster matching. Poster files are imported locally; automatic online metadata lookup is outside this feature.
 
 ## Initial implementation choices
 

@@ -20,9 +20,32 @@ export async function request(path, { method = "GET", body, ...options } = {}) {
     );
   return result;
 }
+async function sendCatalogFile(path, file, headers = {}) {
+  const response = await fetch(`/api${path}`, {
+    method: "POST",
+    headers,
+    body: file,
+    signal: AbortSignal.timeout(120000),
+  });
+  const result = await response.json().catch(() => ({ error: "The catalog returned an unreadable response." }));
+  if (!response.ok) throw new Error(result.message || result.error || "Could not import this catalog file.");
+  return result;
+}
 export const api = {
   list: () => request("/titles"),
   settings: () => request("/settings"),
+  catalog: () => request("/catalog"),
+  searchCatalog: (query, year) => request("/catalog/search", {
+    method: "POST", body: { query, ...(year ? { year } : {}) },
+  }),
+  importCatalog: (file) => sendCatalogFile("/catalog/import", file, { "Content-Type": "text/csv" }),
+  catalogPoster: (file) => sendCatalogFile("/catalog/posters", file, {
+    "Content-Type": file.type || ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" })[file.name.split(".").pop().toLowerCase()] || "application/octet-stream",
+    "X-File-Name": encodeURIComponent(file.name),
+  }),
+  applyCatalog: (id, catalogId) => request(`/titles/${encodeURIComponent(id)}/catalog`, {
+    method: "POST", body: { catalogId },
+  }),
   conversion: () => request("/conversion"),
   conversionJobs: () => request("/conversion/jobs"),
   convert: (id) =>

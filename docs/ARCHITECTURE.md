@@ -46,6 +46,7 @@ desktop/main.mjs          Desktop window, lifecycle, menus, and policies
 dist/                     Shared browser/desktop interface and assets
 apps/server/              API, library services, and startup
 apps/server/media/        Disk source and streaming
+apps/server/metadata/     Offline CSV catalog parsing, search, and artwork references
 apps/server/database.mjs  Metadata queries and versioned schema
 tests/                    Backend integration and frontend regressions
 scripts/                  Source checks and desktop packaging
@@ -56,7 +57,7 @@ Runtime media and databases remain outside source-controlled code. The desktop u
 
 ## Desktop boundary
 
-Electron starts the backend on an ephemeral loopback port, then loads only that origin in a sandboxed window with Node integration disabled and context isolation enabled. It exposes no preload/IPC bridge. Foreign navigation, new windows, and unnecessary permissions are denied. Metadata export alone can trigger a native save dialog.
+Electron starts the backend on an ephemeral loopback port, then loads only that origin in a sandboxed window with Node integration disabled and context isolation enabled. It exposes no preload/IPC bridge. Foreign navigation, new windows, and unnecessary permissions are denied. Metadata export and the catalog CSV template can trigger a native save dialog.
 
 The app uses a single-instance lock, focuses an existing window on repeated launch, and closes the renderer before stopping its backend. Playback position is saved periodically; the final close-time save is best-effort. Runtime data stays outside app.asar so replacing the distribution preserves the library. Smoke tests use an explicitly isolated directory.
 
@@ -96,6 +97,16 @@ The output receives a new title and media asset with independent artwork. The or
 
 Source runs use the npm-supplied executable. Packaged Windows runs explicitly use `resources/ffmpeg/ffmpeg.exe`, outside ASAR, with the engine's upstream license and build provenance. See `THIRD_PARTY_NOTICES.md`.
 
+## Offline metadata catalog
+
+`apps/server/metadata/catalog.mjs` owns strict UTF-8 CSV parsing, bounded import validation, local search, and a separately versioned `catalog.sqlite` database. Catalog entries are lookup records, independent from playable library titles. Imports merge by stable catalog ID in one transaction; failed validation publishes no rows. The parser supports quoted commas, newlines, and escaped quotes, with limits of 20 MiB per CSV and 50,000 total entries.
+
+Poster filenames are local basenames, never arbitrary paths or fetched URLs. Imported JPEG/PNG/WebP images use the existing media-source boundary and publication journals. Startup cleanup includes catalog artwork keys. Search normalizes accents/case and returns up to 30 matches, with an optional release-year filter. The catalog makes no outbound requests and needs no API credential.
+
+An explicit match copies available title/year/description into the library metadata transaction. Existing values survive absent catalog details. A catalog poster is copied to an independent managed key before publication; removing a library title cannot remove the catalog image. Video assets, categories, watchlists, and playback progress are preserved. The frontend requires selection, preview, and Apply, and guards against stale async responses after dialog replacement.
+
+The optional MovieLens preparation script downloads and transforms an external dataset only when run by a developer. Original license/provenance stay beside the generated CSV in the ignored `catalog-imports/` directory. Neither that data nor any personal catalog is bundled with the application or published in source. A complete library backup includes both SQLite databases and all media; the library metadata JSON export omits the lookup catalog.
+
 ## Planned DVD import boundary
 
 Keep disc scanning and conversion in a local backend module, separate from browser uploads and ordinary playback. Use a replaceable conversion-engine adapter; evaluate a supported engine such as HandBrake during that milestone.
@@ -132,6 +143,7 @@ Do not promise support for every disc. For example, [HandBrake's documented limi
 | Add movies from physical DVDs | Requested by user; implementation proposed | Accept converted files first and plan an integrated local import workflow. |
 | Local backend plus disk media storage | Implemented | Establish durable storage and a practical path to a home server. |
 | Metadata separate from video bytes | Implemented | Keep browsing and backups manageable as the collection grows. |
+| Offline CSV movie catalog with local posters | Implemented; chosen by user | Link editable movie names and artwork without an online account or runtime network dependency. |
 | Stable title IDs separate from media assets | Implemented | Support physical copies and future attached videos. |
 | Browser IndexedDB media experiment | Archived in prototypes/ | Unused; the app uses durable disk storage instead. |
 | Private Sites draft | Unpublished, provisional | Created before planning; not a chosen host for the media backend. |
